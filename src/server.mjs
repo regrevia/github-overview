@@ -7,7 +7,7 @@ import { readConfig, writeConfig, resolveToken, parseRepo, normalizeConfig } fro
 import { makeGithub } from "./github.mjs";
 import { makeNpm } from "./npm.mjs";
 import { loadStore, saveStore, repoStore, mergeTraffic, mergeNpm, series, storedDays } from "./store.mjs";
-import { aiSummary, readAiConfig } from "./summary.mjs";
+import { aiSummary, askQuestion, readAiConfig } from "./summary.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = join(ROOT, "public");
@@ -24,7 +24,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     const item = typeof r === "string" ? { repo: r } : r;
     const { owner, name } = parseRepo(item.repo);
     const npmPkg = item.npm || name;
-    return { key: `${owner}/${name}`, owner, name, npmPkg, gh: makeGithub(token, { owner, name }), npm: makeNpm(npmPkg) };
+    return { key: `${owner}/${name}`, owner, name, npmPkg, npmExplicit: Boolean(item.npm), gh: makeGithub(token, { owner, name }), npm: makeNpm(npmPkg) };
   });
   let store = loadStore();
   let lastSync = null;
@@ -42,10 +42,24 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       t.gh.alerts().catch(() => null),
     ]);
     if (views || clones) mergeTraffic(s, views, clones);
-    const npmRange = await t.npm.range(new Date(Date.now() - 400 * 864e5), new Date());
-    if (Array.isArray(npmRange)) mergeNpm(s, npmRange);
-    const week = await t.npm.week().catch(() => null);
-    if (Number.isFinite(week)) s.meta.npmWeek = week;
+    // 仓库名当包名只是默认猜测：先看 registry 的维护者，同名别人的包不算自己的下载
+    let npmOk = true;
+    if (!t.npmExplicit) {
+      const own = await t.npm.maintainers().catch(() => null);
+      npmOk = !own || !own.owners.length || own.owners.includes(t.owner.toLowerCase());
+      if (!npmOk) {
+        s.npm = {};
+        delete s.meta.npmWeek;
+        delete s.meta.npmVers;
+      }
+    }
+    s.meta.npmOwned = npmOk;
+    if (npmOk) {
+      const npmRange = await t.npm.range(new Date(Date.now() - 400 * 864e5), new Date());
+      if (Array.isArray(npmRange)) mergeNpm(s, npmRange);
+      const week = await t.npm.week().catch(() => null);
+      if (Number.isFinite(week)) s.meta.npmWeek = week;
+    }
     const prefix = `/${t.owner}/${t.name}`;
     s.meta.repo = repoInfo || s.meta.repo || { owner: t.owner, name: t.name };
     s.meta.paths = (paths || []).map((p) => {
@@ -55,9 +69,9 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     });
     s.meta.referrers = (referrers || []).map((r) => ({ from: r.referrer, n: r.count, u: r.uniques }));
     s.meta.alerts = alerts;
-    s.meta.npmVers = await t.npm.perVersion().catch(() => []);
+    s.meta.npmVers = npmOk ? await t.npm.perVersion().catch(() => []) : [];
     s.meta.activity = activity;
-    const published = await t.npm.versions().catch(() => []);
+    const published = npmOk ? await t.npm.versions().catch(() => []) : [];
     const merged = new Map();
     for (const r of releases || []) merged.set(r.tag_name, { tag: r.tag_name, at: r.published_at, url: r.html_url });
     for (const v of published) if (!merged.has(v.version)) merged.set(v.version, { tag: v.version, at: v.at, url: null });
@@ -213,7 +227,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       return {
         key: t.key,
         label: t.key,
-        npmPkg: t.npmPkg,
+        npmPkg: s.meta?.npmOwned === false ? null : t.npmPkg,
         stars: s.meta?.repo?.stars ?? null,
         storedDays: storedDays(s),
         syncedAt: s.meta?.syncedAt ?? null,
@@ -256,6 +270,31 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
           scope: key === ALL ? `你的 ${targets.length} 个仓库` : key,
         });
         return send(200, ai);
+      }
+      if (url.pathname === "/api/ask" && req.method === "POST") {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw || "{}");
+        const question = String(body.question || "").trim();
+        if (!question) return send(400, { error: "缺少问题" });
+        const windowDays = Number(body.days || days);
+        const key = body.repo || ALL;
+        const data = build(windowDays, key);
+        const ans = await askQuestion(
+          {
+            days: windowDays,
+            covered: data.range.covered,
+            uniques: data.totals.uniques,
+            views: data.totals.views,
+            external: data.contributions,
+            stars: data.repo.stars,
+            npmWeek: data.totals.npmWeek,
+            paths: data.paths,
+            scope: key === ALL ? `你的 ${targets.length} 个仓库` : key,
+          },
+          question,
+        );
+        return send(200, ans);
       }
       if (url.pathname === "/api/config") {
         if (req.method === "POST") {

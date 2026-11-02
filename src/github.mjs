@@ -67,6 +67,8 @@ export function makeGithub(token, { owner, name }) {
         for (const it of items) {
           const kind = it.pull_request ? "pulls" : "issues";
           const author = it.user?.login || "ghost";
+          // 机器人（dependabot[bot]、github-actions[bot]、CI app）不算外部反馈
+          if (it.user?.type === "Bot" || author.endsWith("[bot]")) { out.botCount = (out.botCount || 0) + 1; continue; }
           if (self.has(author.toLowerCase())) { out.selfCount++; continue; }
           out[kind].push({
             number: it.number,

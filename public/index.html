@@ -146,6 +146,7 @@
   .cfg-row label { width: 56px; flex: none; }
   .cfg { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-l1); }
   .cfg.open { display: block; }
+  .ask-out { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: var(--label-secondary); }
   .foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--label-secondary); margin-top: 12px; }
   .link { color: var(--label-secondary); border: 0; height: auto; padding: 0; background: none; text-decoration: underline; text-underline-offset: 2px; }
   .link:hover { color: var(--label-primary); background: none; }
@@ -296,11 +297,13 @@
           <input placeholder="问这个仓库">
           <button class="mini">问</button>
         </div>
-        <div class="foot"><span>deepseek-v4</span><button class="link" id="cfg-toggle">配置</button></div>
+        <p class="ask-out" id="ask-out" hidden></p>
+        <div class="foot"><span id="ai-model">deepseek-chat</span><button class="link" id="cfg-toggle">配置</button></div>
 
         <div class="cfg" id="cfg">
-          <div class="cfg-row"><label>Base URL</label><input value="https://api.deepseek.com/v1" spellcheck="false"></div>
-          <div class="cfg-row"><label>API Key</label><input type="password" placeholder="sk-…" spellcheck="false"></div>
+          <div class="cfg-row"><label>Base URL</label><input id="cfg-base" placeholder="https://api.deepseek.com/v1" spellcheck="false"></div>
+          <div class="cfg-row"><label>API Key</label><input id="cfg-key" type="password" placeholder="sk-…" spellcheck="false"></div>
+          <div class="cfg-row"><label>模型</label><input id="cfg-model" placeholder="deepseek-chat" spellcheck="false"></div>
           <div class="cfg-row" style="justify-content:flex-end;gap:6px">
             <button class="mini ghost">取消</button>
             <button class="mini" id="cfg-save">保存</button>
@@ -621,10 +624,42 @@ document.getElementById("theme").addEventListener("click", () => {
   render(currentRange);
 });
 
-document.getElementById("cfg-toggle").addEventListener("click", () => document.getElementById("cfg").classList.toggle("open"));
-document.getElementById("cfg-save").addEventListener("click", () => {
-  document.getElementById("cfg").classList.remove("open");
-  document.getElementById("cfg-toggle").textContent = "已配置";
+const postJson = (path, obj) =>
+  fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(obj) });
+const cfgPanel = document.getElementById("cfg");
+async function loadCfg() {
+  try {
+    const r = await fetch("/api/config", { cache: "no-store" });
+    const c = await r.json();
+    document.getElementById("cfg-base").value = c.baseurl || "";
+    document.getElementById("cfg-model").value = c.model || "";
+    document.getElementById("ai-model").textContent = c.model || "deepseek-chat";
+    if (c.apikey) document.getElementById("cfg-key").placeholder = "已保存";
+  } catch {}
+}
+document.getElementById("cfg-toggle").addEventListener("click", () => {
+  const open = cfgPanel.classList.toggle("open");
+  if (open) loadCfg();
+});
+document.getElementById("cfg-save").addEventListener("click", async () => {
+  const base = document.getElementById("cfg-base").value.trim();
+  if (!base) { document.getElementById("cfg-base").focus(); return; }
+  const btn = document.getElementById("cfg-save");
+  btn.disabled = true;
+  try {
+    const r = await postJson("/api/config", { baseurl: base, apikey: document.getElementById("cfg-key").value.trim(), model: document.getElementById("cfg-model").value.trim() });
+    if (!r.ok) throw new Error("save");
+    const c = await r.json();
+    document.getElementById("ai-model").textContent = c.model || "deepseek-chat";
+    document.getElementById("cfg-key").value = "";
+    document.getElementById("cfg-toggle").textContent = "已保存";
+    document.getElementById("ask-out").hidden = true;
+    cfgPanel.classList.remove("open");
+    loadSummary(currentRange);
+  } catch {
+    document.getElementById("cfg-toggle").textContent = "保存失败";
+  }
+  btn.disabled = false;
 });
 
 const rb = document.getElementById("refresh");
@@ -715,9 +750,7 @@ function applyLive(json) {
   document.getElementById("s-alerts").textContent = !al || !opened.length ? "未开启" : total ? total + " 条" : "无";
   document.getElementById("s-alerts-sub").textContent = !al || !opened.length ? "无数据" : total ? "待处理" : "已开启";
   const t = json.totals || {};
-  if (t.npmWeek != null) {
-    document.getElementById("k-npm").textContent = fmt(t.npmWeek);
-  }
+  document.getElementById("k-npm").textContent = t.npmWeek != null ? fmt(t.npmWeek) : "—";
   const days = json.range?.storedDays || 0;
   document.getElementById("r-days").textContent = days + " 天";
   if (json.updatedAt) {
@@ -816,15 +849,30 @@ async function loadSummary(days) {
     });
     const at = document.getElementById("sum-at");
     if (at) at.textContent = new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).replace("/", "-");
+    document.getElementById("cfg-toggle").textContent = data.error ? "未连通" : data.source === "ai" ? "已配置" : "配置";
   } catch (e) {}
 }
 
 document.querySelector(".ask button").addEventListener("click", async () => {
   const input = document.querySelector(".ask input");
-  if (!input.value.trim()) return;
+  const btn = document.querySelector(".ask button");
+  const out = document.getElementById("ask-out");
+  const q = input.value.trim();
+  if (!q) return;
   input.disabled = true;
-  const res = await loadSummary(currentRange);
+  btn.disabled = true;
+  out.hidden = false;
+  out.textContent = "在查…";
+  try {
+    const r = await postJson("/api/ask", { question: q, repo: currentRepo, days: currentRange });
+    const d = await r.json();
+    out.textContent = d.answer || "没答上来。";
+    if (d.source === "ai") input.value = "";
+  } catch {
+    out.textContent = "连不上本地服务。";
+  }
   input.disabled = false;
+  btn.disabled = false;
 });
 
 

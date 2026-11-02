@@ -15,10 +15,10 @@ npx github-overview start      # http://127.0.0.1:4317
 ```
 
 - `--user` 会把账号下自己拥有的仓库都绑上；页面顶部可以切到「全部仓库」看合计，也可以切单个仓库。只要一部分就写 `--repo a/b,c/d`。
-- `--npm` 按同一个顺序对应仓库，不写就用仓库名当包名。
+- `--npm` 按同一个顺序对应仓库，只在包名和仓库名不一样时才写。默认拿仓库名去找包，找到了还要核对 registry 上的维护者是不是你，不是就不算下载。
 - 首次同步把 14 天内的流量存到本地，之后每 6 小时自动刷新（`--refresh` 可改），页面上的「刷新」随时手动同步。
-- AI 摘要：`npx github-overview config --apikey KEY --baseurl URL`，只存本机 `~/.config/github-overview/config.json`。
-- 没配 AI 也能用，摘要走内置模板。
+- AI 摘要：`npx github-overview config --apikey KEY --baseurl URL --model MODEL`，或点页面右下角「配置」直接填，只存本机 `~/.config/github-overview/config.json`。模型不写用 `deepseek-chat`。
+- 没配 AI 也能用，摘要走内置模板；配好后还能在摘要框下面问一句，按当前范围的数据回答。
 
 ## 为什么需要它
 
@@ -33,7 +33,7 @@ GitHub 自带的 traffic 只给 14 天，而且只有浏览和克隆，看不到
 | 克隆 | `git clone` 的总次数 |
 | 克隆人数 | 去重后的人数 |
 | 发版 | 窗口内发布的版本，含 npm 发布时间 |
-| 外部贡献 | 别人提的 issue 和 PR，作者自己的不计 |
+| 外部贡献 | 别人提的 issue 和 PR，作者自己和 CI、机器人账号的不计 |
 
 - 浏览和克隆是两个指标，不相加。
 - 页面构成是浏览落在哪些页面，来源是从哪个站进来，两者分开。
@@ -64,6 +64,8 @@ GitHub 的 traffic 只保留最近 14 天，所以第一次运行就要开始存
 - [x] 定时刷新与手动刷新
 - [x] 面板内配置（AI 的 base URL 与 key）
 - [x] AI 摘要，未配置时用模板
+- [x] 摘要框里直接提问
+- [x] npm 包归属核对，机器人 PR 不计入外部
 - [x] 绑定 GitHub 账号，多仓切换与合计
 
 ## License

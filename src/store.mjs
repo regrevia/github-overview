@@ -86,7 +86,7 @@ export function series(slice, days, npmDaily = {}) {
       u: row.u ?? null,
       c: row.c ?? null,
       cu: row.cu ?? null,
-      n: npmDaily[k] ?? slice.npm[k] ?? null,
+      n: npmDaily[k] ?? slice.npm?.[k] ?? null,
     });
   }
   return out;

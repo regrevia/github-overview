@@ -29,17 +29,55 @@ export function saveAiConfig({ apikey, baseurl, model }) {
   return writeConfig({ ...cfg, apikey: apikey ?? cfg.apikey ?? "", baseurl: baseurl ?? cfg.baseurl ?? "", model: model || cfg.model || DEFAULT_MODEL });
 }
 
+const factLines = (ctx) =>
+  [
+    `范围：${ctx.scope || "本仓库"}，近 ${ctx.days} 天${ctx.covered && ctx.covered < ctx.days ? `（数据覆盖 ${ctx.covered} 天）` : ""}`,
+    `访客：${ctx.uniques ?? "未知"} 人，浏览 ${ctx.views ?? "未知"} 次`,
+    `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
+    `stars ${ctx.stars}，npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
+    `最热页面：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
+  ].join("\n");
+
+const ENDPOINT = (baseurl) => baseurl.replace(/\/$/, "") + "/chat/completions";
+
+export async function askQuestion(ctx, question) {
+  const { apikey, baseurl, model } = readAiConfig();
+  if (!apikey || !baseurl) return { source: "none", answer: "先在配置里填 Base URL 和 API Key。" };
+  const body = {
+    model,
+    temperature: 0.2,
+    max_tokens: 200,
+    messages: [
+      {
+        role: "system",
+        content:
+          "你在回答一个 GitHub 仓库数据看板上的提问。只依据给出的数字回答，1 到 2 句，合计不超过 60 个汉字。" +
+          "数字里没有的直接说没记录，不要猜测。不要解释流量为什么变化，不要提机器、机器人、CI、镜像。直接输出答案。",
+      },
+      { role: "user", content: `${factLines(ctx)}\n\n问题：${question}` },
+    ],
+  };
+  try {
+    const res = await fetch(ENDPOINT(baseurl), {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return { source: "error", answer: `AI 没回应（${res.status}）` };
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content?.trim();
+    if (!text) return { source: "error", answer: "AI 回了空内容。" };
+    return { source: "ai", answer: text.replace(/\s+/g, " ").slice(0, 160) };
+  } catch (e) {
+    return { source: "error", answer: "连不上 Base URL。" };
+  }
+}
+
 export async function aiSummary(ctx) {
   const { apikey, baseurl, model } = readAiConfig();
   if (!apikey || !baseurl) return { source: "template", lines: templateSummary(ctx) };
-  const url = baseurl.replace(/\/$/, "") + "/chat/completions";
-  const facts = [
-    `窗口：近 ${ctx.days} 天`,
-    `访客：${ctx.uniques ?? "未知"} 人，浏览 ${ctx.views ?? "未知"} 次`,
-    `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
-    `stars ${ctx.stars}，npm 周下载 ${ctx.npmWeek ?? "未知"}`,
-    `最热页面：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、")}`,
-  ].join("\n");
+  const url = ENDPOINT(baseurl);
+  const facts = factLines(ctx);
   const body = {
     model,
     temperature: 0.3,

@@ -23,6 +23,15 @@ export function makeNpm(pkg) {
   const safe = encodeURIComponent(pkg);
   return {
     pkg,
+    // 仓库名不等于 npm 包名时，先确认包归谁，别把同名包算进来
+    async maintainers() {
+      try {
+        const meta = await getJson(`${REGISTRY}/${safe}/latest`);
+        return { owners: (meta.maintainers || []).map((m) => String(m.name || "").toLowerCase()), version: meta.version || null };
+      } catch {
+        return null;
+      }
+    },
     async week() {
       try {
         return (await getJson(`${POINT}/last-week/${safe}`)).downloads ?? null;

@@ -26,7 +26,7 @@ function usage() {
   github-overview init --repo owner/repo[,owner/repo2] [--npm 包名,...]
   github-overview start [--port 4317] [--days 7] [--refresh 6]
   github-overview sync
-  github-overview config --apikey KEY --baseurl URL
+  github-overview config --apikey KEY --baseurl URL [--model deepseek-chat]
 `);
 }
 
@@ -40,7 +40,7 @@ async function listUserRepos(user) {
   const res = await fetch("https://api.github.com" + path, { headers });
   if (!res.ok) throw new Error(`拉取 ${user} 的仓库失败：${res.status}`);
   const rows = await res.json();
-  return rows.filter((r) => !r.fork && (r.permissions ? r.permissions.push : true)).map((r) => ({ repo: r.full_name, npm: r.name }));
+  return rows.filter((r) => !r.fork && (r.permissions ? r.permissions.push : true)).map((r) => ({ repo: r.full_name }));
 }
 
 try {
@@ -48,21 +48,21 @@ try {
     let repos = [];
     let user = userArg;
     if (user) repos = await listUserRepos(user);
-    else if (repoArg) repos = repoArg.split(",").map((s) => s.trim()).filter(Boolean).map((s) => parseRepo(s)).map((r) => ({ repo: `${r.owner}/${r.name}`, npm: r.name }));
+    else if (repoArg) repos = repoArg.split(",").map((s) => s.trim()).filter(Boolean).map((s) => parseRepo(s)).map((r) => ({ repo: `${r.owner}/${r.name}` }));
     else {
       usage();
       throw new Error("给个账号或仓库：--user 用户名 或 --repo owner/repo");
     }
     if (!repos.length) throw new Error(`${user || repoArg} 下没有可绑定的仓库`);
     const npmList = npmArg ? npmArg.split(",").map((s) => s.trim()) : [];
-    repos = repos.map((r, i) => ({ ...r, npm: npmList[i] || r.npm }));
+    repos = repos.map((r, i) => (npmList[i] ? { ...r, npm: npmList[i] } : r));
     const next = { ...readConfig(), user: user || repos[0].repo.split("/")[0], repos };
     delete next.repo;
     delete next.npm;
     writeConfig(next);
     console.log(`已写入 ${CONFIG_PATH}`);
     console.log(`绑定 ${next.user}，${repos.length} 个仓库`);
-    console.log(repos.slice(0, 8).map((r) => `  ${r.repo}${r.npm !== r.repo.split("/")[1] ? " → npm " + r.npm : ""}`).join("\n") + (repos.length > 8 ? `\n  …共 ${repos.length} 个` : ""));
+    console.log(repos.slice(0, 8).map((r) => `  ${r.repo}${r.npm && r.npm !== r.repo.split("/")[1] ? " → npm " + r.npm : ""}`).join("\n") + (repos.length > 8 ? `\n  …共 ${repos.length} 个` : ""));
     console.log("下一步：github-overview start");
     process.exit(0);
   }
@@ -71,8 +71,10 @@ try {
     const next = { ...readConfig() };
     const apikey = flag("--apikey");
     const baseurl = flag("--baseurl");
+    const model = flag("--model");
     if (apikey) next.apikey = apikey;
     if (baseurl) next.baseurl = baseurl.replace(/\/$/, "");
+    if (model) next.model = model;
     writeConfig(next);
     console.log(`AI 配置已保存到 ${CONFIG_PATH}`);
     process.exit(0);

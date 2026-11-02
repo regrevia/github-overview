@@ -52,7 +52,8 @@ export function normalizeConfig(raw = {}) {
     .filter((r) => r && r.repo)
     .map((r) => {
       const { owner, name } = parseRepo(r.repo);
-      return { repo: `${owner}/${name}`, npm: r.npm || name };
+      // 只有手工写了 npm 才算绑定，否则留给 registry 核对归属
+      return { repo: `${owner}/${name}`, ...(r.npm ? { npm: r.npm } : {}) };
     });
   if (!cfg.user && cfg.repos.length) cfg.user = cfg.repos[0].repo.split("/")[0];
   return cfg;
@@ -65,6 +66,6 @@ export function parseRepos(spec) {
     .filter(Boolean)
     .map((s) => {
       const { owner, name } = parseRepo(s);
-      return { repo: `${owner}/${name}`, npm: name };
+      return { repo: `${owner}/${name}` };
     });
 }
