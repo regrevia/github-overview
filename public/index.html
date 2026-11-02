@@ -28,7 +28,7 @@
     --label-primary: #12161d;
     --label-secondary: #5c6472;
     --brand: #2b62d9;
-    --machine: #79838f;
+    --machine: #5f6873;
     --event: #a8761b;
     --success: #1a7f37;
     --shadow: 0 8px 28px rgba(16,24,40,.12);
@@ -62,6 +62,14 @@
   .repo { font-size: 16px; font-weight: 600; white-space: nowrap; }
   .repo span { color: var(--label-secondary); font-weight: 400; }
   .caret { color: var(--label-secondary); font-weight: 400; }
+  .repo-wrap { position: relative; }
+  .repo-wrap > .repo { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--label-primary); cursor: pointer; }
+  .repo-wrap > .repo:hover { color: var(--label-secondary); }
+  .repo-menu { position: absolute; top: 26px; left: -8px; z-index: 20; min-width: 200px; max-height: 260px; overflow: auto;
+    padding: 6px; background: var(--bg-layer-2); border: 1px solid var(--border-l2); border-radius: 8px; }
+  .repo-menu button { display: flex; width: 100%; height: 30px; align-items: center; border: 0; border-radius: 8px; padding: 0 8px;
+    background: none; color: var(--label-primary); font-size: 12px; text-align: left; }
+  .repo-menu button:hover, .repo-menu button.on { background: var(--border-l1); }
   .spacer { flex: 1; }
   .seg { display: inline-flex; border: 1px solid var(--border-l2); border-radius: 8px; overflow: hidden; height: 28px; }
   .seg button { border: 0; border-radius: 0; height: 26px; margin: 1px; padding: 0 10px; color: var(--label-secondary); }
@@ -101,6 +109,7 @@
   .donut-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--label-secondary); white-space: nowrap; }
   .donut-legend i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
   .donut-legend b { font-weight: 500; }
+  .empty { font-size: 12px; color: var(--label-secondary); }
   .ranks { display: grid; gap: 16px; }
   .ranks h3 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--label-secondary); }
   .ranks ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
@@ -183,7 +192,10 @@
   <header>
     <span class="brand">github-overview</span>
     <span class="sep"></span>
-    <div class="repo"><span id="repo-owner">owner /</span> <span id="repo-name">repo</span> <span class="caret">▾</span></div>
+    <div class="repo-wrap">
+      <button class="repo" id="repo-pick" aria-haspopup="true" aria-expanded="false"><span id="repo-owner"></span><span id="repo-name">全部仓库</span> <span class="caret">▾</span></button>
+      <div class="repo-menu" id="repo-menu" hidden></div>
+    </div>
     <div class="spacer"></div>
     <div class="seg" id="seg">
       <button data-r="7" class="on">7 天</button>
@@ -343,7 +355,9 @@ let LAST = dayIdx(DATA[DATA.length - 1].d);
 
 function domain(days) {
   const out = [];
-  for (let i = days - 1; i >= 0; i--) {
+  // 只画有记录的那段，别把 14 天数据摊在 30 天轴上
+  const start = Math.max(LAST - days + 1, FIRST == null ? -Infinity : FIRST);
+  for (let i = LAST - start; i >= 0; i--) {
     const dt = new Date((LAST - i) * 864e5);
     const label = String(dt.getUTCMonth() + 1).padStart(2, "0") + "-" + String(dt.getUTCDate()).padStart(2, "0");
     out.push({ label, rec: DATA.find(r => r.d === label) });
@@ -356,6 +370,7 @@ function flowChart(node, days) {
   const dom = domain(days);
   const W = Math.max(300, Math.round(node.clientWidth || 720)), H = 196, P = { l: 42, r: 42, t: 12, b: 22 };
   const iw = W - P.l - P.r, ih = H - P.t - P.b, ticks = 4;
+  if (!DATA.some(r => (r.v || 0) > 0 || (r.c || 0) > 0)) return emptyInto(node, "还没有流量数据");
   const L = scale(Math.max(...DATA.map(r => r.v)) * 1.06, ticks);
   const R = scale(Math.max(...DATA.map(r => r.c)) * 1.06, ticks);
   const x = i => P.l + (i * iw) / (dom.length - 1);
@@ -414,7 +429,10 @@ function npmChart(node, days) {
   const dom = domain(days);
   const W = Math.max(300, Math.round(node.clientWidth || 720)), H = 122, P = { l: 44, r: 10, t: 14, b: 20 };
   const iw = W - P.l - P.r, ih = H - P.t - P.b, ticks = 2;
-  const S = scale(Math.max(...DATA.filter(r => r.n).map(r => r.n)) * 1.02, ticks);
+  const nvals = DATA.map(r => r.n).filter(v => typeof v === "number" && isFinite(v) && v > 0);
+  if (!nvals.length) return emptyInto(node, "还没有下载数据");
+  const NMAX = Math.max(...nvals);
+  const S = scale(NMAX * 1.02, ticks);
   const bw = Math.max(4, Math.min(24, (iw / dom.length) * 0.5));
   const cx = i => P.l + (i + .5) * (iw / dom.length);
   const y = v => P.t + ih - (v / S.max) * ih;
@@ -431,11 +449,13 @@ function npmChart(node, days) {
     const v = d.rec.n;
     const pending = i >= dom.length - 2;
     if (v == null || (pending && v === 0)) {
+      if (!pending) return; // 早期缺失的数据不画桩，免得整排虚线像归零
       svg.appendChild(el("rect", { x: cx(i) - bw / 2, y: P.t + ih - 7, width: bw, height: 7, rx: 2, fill: "none", stroke: c.machine, opacity: .55, "stroke-dasharray": "2 3" }));
       return;
     }
+    if (v === 0) return; // 0 下载不画成一条线
     svg.appendChild(el("rect", { x: cx(i) - bw / 2, y: y(v), width: bw, height: Math.max(2, P.t + ih - y(v)), rx: 2, fill: c.human, opacity: .85 }));
-    if (v > 0 && bw > 12 && (iw / dom.length > 46 || v === Math.max(...DATA.filter(r => r.n).map(r => r.n)))) svg.appendChild(el("text", { x: cx(i), y: y(v) - 6, "text-anchor": "middle", class: "val-label" }, fmt(v)));
+    if (v > 0 && bw > 12 && (iw / dom.length > 46 || v === NMAX)) svg.appendChild(el("text", { x: cx(i), y: y(v) - 6, "text-anchor": "middle", class: "val-label" }, fmt(v)));
   });
   const step = Math.max(1, Math.ceil(dom.length / 6));
   dom.forEach((d, i) => {
@@ -449,24 +469,38 @@ let RANKS = [
   ["看了哪些页面", [["仓库主页", 397], ["issues 列表", 15], ["README", 2], ["actions 页", 1]]]
 ];
 let PATHS = null;
+let FIRST = null;
+let LIVE_SET = false;
+
+const emptyInto = (node, text) => {
+  node.textContent = "";
+  const d = document.createElement("div");
+  d.className = "empty";
+  d.textContent = text;
+  node.appendChild(d);
+};
 let REFS = null;
 
-const shortPath = p => p === "仓库主页" ? "仓库主页"
-  : /^issues\/\d+$/.test(p) ? "issue 页"
-  : /issues/.test(p) ? "issues 列表"
-  : /README/i.test(p) ? "README"
-  : /^actions/.test(p) ? "actions 页"
-  : /^blob\//.test(p) ? "文件页"
-  : p;
+const shortPath = p => {
+  const q = String(p).replace(/^\/+/, "");
+  return q === "仓库主页" ? "仓库主页"
+    : /^issues\/\d+$/.test(q) ? "issue 页"
+    : /^issues/.test(q) ? "issues 列表"
+    : /^readme/i.test(q) ? "README"
+    : /^actions/.test(q) ? "actions 页"
+    : /^blob\//.test(q) ? "文件页"
+    : p;
+};
 
 function donut(node) {
   node.textContent = "";
   const cs = getComputedStyle(document.documentElement);
   let parts = PATHS ? PATHS : [];
-  if (!parts.length) parts = [["0.6.14", 320, "--brand"], ["旧版本", 1137, "--machine"]];
+  if (!parts.length && !LIVE_SET) parts = [["0.6.14", 320, "--brand"], ["旧版本", 1137, "--machine"]];
+  if (!parts.length) return emptyInto(node, "还没有页面数据");
   const total = parts.reduce((s, p) => s + p[1], 0);
   const R = 40, ST = 13, CIRC = 2 * Math.PI * R;
-  const svg = el("svg", { viewBox: "0 0 104 104", role: "img", "aria-label": "npm 版本下载占比" });
+  const svg = el("svg", { viewBox: "0 0 104 104", role: "img", "aria-label": "页面访问占比" });
   svg.appendChild(el("circle", { cx: 52, cy: 52, r: R, fill: "none", stroke: cs.getPropertyValue("--border-l1").trim(), "stroke-width": ST }));
   let off = 0;
   parts.forEach(p => {
@@ -504,6 +538,10 @@ function donut(node) {
 
 function ranks(node) {
   node.textContent = "";
+  if (!RANKS.length) return;
+  // 只有一两个来源时别把数字推到半屏外
+  const thin = RANKS.length === 1 && RANKS[0][1].length <= 2;
+  node.style.maxWidth = thin ? "320px" : "";
   RANKS.forEach(([group, rows]) => {
     const box = document.createElement("div");
     const h3 = document.createElement("h3");
@@ -553,11 +591,12 @@ function render(days) {
   const tv = recs.reduce((s, r) => s + r.v, 0);
   const tu = recs.reduce((s, r) => s + r.u, 0);
   // 访客只能用 API 窗口去重值；超过 14 天没有该值就退回日均
-  let uniq = days === 7 && LIVE.totals.uniques != null ? LIVE.totals.uniques : null;
-  if (uniq == null && days <= 14 && LIVE.totals.uniques != null && days === LIVE.range.days) uniq = LIVE.totals.uniques;
-  if (uniq == null) uniq = recs.length ? Math.round(tu / recs.length) : null;
+  // 7 天取 API 去重值，更长范围按覆盖期逐日合计
+  let uniq = LIVE.totals.uniques != null ? LIVE.totals.uniques : null;
+  if (uniq == null) uniq = recs.length ? tu : null;
   kUniq.textContent = uniq == null ? "—" : fmt(uniq);
-  kViewsSub.textContent = days === 7 ? fmt(tv) + " 次浏览" : "日均 " + (recs.length ? fmt(tv / recs.length) : "—") + " 次浏览";
+  const covered = LIVE.range && LIVE.range.covered;
+  kViewsSub.textContent = fmt(tv) + " 次浏览" + (covered && covered < days ? `，覆盖 ${covered} 天` : "");
   rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
   flowChart(document.getElementById("c-flow"), days);
   npmChart(document.getElementById("c-npm"), days);
@@ -614,9 +653,14 @@ const mmdd = iso => label(iso);
 
 function applyLive(json) {
   Object.assign(LIVE, json);
+  LIVE_SET = true;
+  PATHS = null;
+  RANKS = [];
   if (Array.isArray(json.series) && json.series.length) {
     DATA = json.series.map(r => ({ d: label(r.d), v: r.v ?? 0, u: r.u ?? 0, c: r.c ?? 0, cu: r.cu ?? 0, n: r.n }));
     LAST = dayIdx(json.series[json.series.length - 1].d);
+    FIRST = json.range?.first ? dayIdx(json.range.first) : null;
+    if (FIRST != null && FIRST < 0) FIRST = null;
     RELEASE = {};
     for (const rel of json.releases || []) {
       const k = label(rel.at);
@@ -624,17 +668,26 @@ function applyLive(json) {
     }
   }
   if (Array.isArray(json.paths) && json.paths.length) {
-    const rows = json.paths.slice(0, 3).map(p => [shortPath(p.p), p.n]);
-    const rest = json.paths.slice(3).reduce((s, p) => s + p.n, 0);
-    PATHS = [[...rows[0], "--brand"], ...rows.slice(1).map((r, i) => [...r, i ? "--event" : "--machine"])];
+    const merged = new Map();
+    for (const p of json.paths) merged.set(shortPath(p.p), (merged.get(shortPath(p.p)) || 0) + p.n);
+    const rows = [...merged.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const rest = [...merged.values()].reduce((s, n) => s + n, 0) - rows.reduce((s, r) => s + r[1], 0);
+    PATHS = rows.map(([k, n], i) => [k, n, i === 0 ? "--brand" : i === 1 ? "--machine" : "--event"]);
     if (rest > 0) PATHS.push(["其他页面", rest, "--border-l2"]);
   }
   if (Array.isArray(json.referrers) && json.referrers.length) {
     RANKS = [["从哪来", json.referrers.slice(0, 4).map(r => [r.from.replace(/^www\./, ""), r.n])]];
   }
   const repo = json.repo || {};
-  if (repo.owner) document.getElementById("repo-owner").textContent = repo.owner + " /";
-  if (repo.name) document.getElementById("repo-name").textContent = repo.name;
+  const ownerEl = document.getElementById("repo-owner");
+  const nameEl = document.getElementById("repo-name");
+  if (repo.fullName === "全部仓库") {
+    ownerEl.textContent = "";
+    nameEl.textContent = "全部仓库";
+  } else {
+    ownerEl.textContent = repo.owner ? repo.owner + " /" : "";
+    nameEl.textContent = repo.name || "";
+  }
   const c = json.contributions || { issues: [], pulls: [] };
   const ic = c.issues.length, pc = c.pulls.length;
   document.getElementById("k-contrib").textContent = ic + pc;
@@ -644,7 +697,7 @@ function applyLive(json) {
   const rels = (json.releases || []).filter(r => DATA.some(x => x.d === label(r.at)));
   document.getElementById("k-rel").textContent = rels.length;
   document.getElementById("k-rel-sub").textContent = rels.length
-    ? rels[rels.length - 1].tag + " → " + rels[0].tag
+    ? (repo.fullName === "全部仓库" ? "最近 " + label(rels[0].at) : rels[rels.length - 1].tag + " → " + rels[0].tag)
     : "本窗口无发版";
   const iss = c.issues[0];
   document.getElementById("s-issues").textContent = ic + " 个";
@@ -673,9 +726,69 @@ function applyLive(json) {
   }
 }
 
+let REPOS = [];
+let currentRepo = "all";
+const PICK = document.getElementById("repo-pick");
+const MENU = document.getElementById("repo-menu");
+
+function closeMenu() {
+  MENU.hidden = true;
+  PICK.setAttribute("aria-expanded", "false");
+}
+
+function paintRepos() {
+  MENU.innerHTML = "";
+  const add = (key, label) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.dataset.key = key;
+    b.classList.toggle("on", key === currentRepo);
+    MENU.appendChild(b);
+  };
+  add("all", "全部仓库");
+  for (const r of REPOS) add(r.key, r.label.replace(/^[^/]+\//, ""));
+  closeMenu();
+}
+
+async function loadRepos() {
+  try {
+    const res = await fetch("/api/repos", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    REPOS = data.repos || [];
+    if (currentRepo !== "all" && !REPOS.some((r) => r.key === currentRepo)) currentRepo = "all";
+    paintRepos();
+    const cur = REPOS.find((r) => r.key === currentRepo);
+    document.getElementById("repo-name").textContent = cur ? cur.key.replace(/^[^/]+\//, "") : "全部仓库";
+    document.getElementById("repo-owner").textContent = cur ? cur.key.split("/")[0] + " /" : "";
+  } catch (e) {}
+}
+
+PICK.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = MENU.hidden;
+  MENU.hidden = !open;
+  PICK.setAttribute("aria-expanded", String(open));
+});
+
+MENU.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  currentRepo = b.dataset.key;
+  [...MENU.children].forEach((x) => x.classList.toggle("on", x === b));
+  paintRepos();
+  const cur = REPOS.find((r) => r.key === currentRepo);
+  document.getElementById("repo-name").textContent = b.textContent;
+  document.getElementById("repo-owner").textContent = cur ? cur.key.split("/")[0] + " /" : "";
+  pull(currentRange, true);
+});
+
+document.addEventListener("click", () => closeMenu());
+
 async function pull(days, force) {
   try {
-    const res = await fetch("/api/data?days=" + days, { cache: "no-store" });
+    const res = await fetch("/api/data?days=" + days + "&repo=" + encodeURIComponent(currentRepo), { cache: "no-store" });
     if (!res.ok) throw new Error(res.status);
     const json = await res.json();
     if (json.repo && !json.repo.stars && !force) { /* 未同步过也照常渲染 */ }
@@ -692,7 +805,7 @@ async function pull(days, force) {
 
 async function loadSummary(days) {
   try {
-    const res = await fetch("/api/summary?days=" + days, { cache: "no-store" });
+    const res = await fetch("/api/summary?days=" + days + "&repo=" + encodeURIComponent(currentRepo), { cache: "no-store" });
     if (!res.ok) return;
     const data = await res.json();
     const lines = data.lines || [];
@@ -715,7 +828,7 @@ document.querySelector(".ask button").addEventListener("click", async () => {
 });
 
 
-pull(7);
+loadRepos().then(() => pull(7));
 let rzT;
 addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => render(currentRange), 160); });
 </script>

@@ -39,3 +39,32 @@ export function parseRepo(spec) {
   if (!m) throw new Error(`仓库写法应为 owner/repo，收到：${spec}`);
   return { owner: m[1], name: m[2] };
 }
+
+// 统一成 { user, repos: [{ repo, npm }] }，并兼容旧的单仓库字段
+export function normalizeConfig(raw = {}) {
+  const cfg = { ...raw };
+  let repos = cfg.repos;
+  if (!Array.isArray(repos) || !repos.length) {
+    repos = cfg.repo ? [{ repo: cfg.repo, npm: cfg.npm }] : [];
+  }
+  cfg.repos = repos
+    .map((r) => (typeof r === "string" ? { repo: r } : r))
+    .filter((r) => r && r.repo)
+    .map((r) => {
+      const { owner, name } = parseRepo(r.repo);
+      return { repo: `${owner}/${name}`, npm: r.npm || name };
+    });
+  if (!cfg.user && cfg.repos.length) cfg.user = cfg.repos[0].repo.split("/")[0];
+  return cfg;
+}
+
+export function parseRepos(spec) {
+  return String(spec || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      const { owner, name } = parseRepo(s);
+      return { repo: `${owner}/${name}`, npm: name };
+    });
+}

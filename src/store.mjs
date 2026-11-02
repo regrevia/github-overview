@@ -3,16 +3,33 @@ import { dirname } from "node:path";
 import { STORE_PATH } from "./config.mjs";
 
 // GitHub traffic only keeps 14 rolling days, so every sync appends today's row.
-const EMPTY = { version: 1, days: {}, npm: {}, releases: [], meta: {} };
+const emptySlice = () => ({ days: {}, npm: {}, releases: [], meta: {} });
+const emptyStore = () => ({ version: 2, repos: {} });
 
 export function loadStore(path = STORE_PATH) {
-  if (!existsSync(path)) return structuredClone(EMPTY);
+  if (!existsSync(path)) return emptyStore();
   try {
     const data = JSON.parse(readFileSync(path, "utf8"));
-    return { ...structuredClone(EMPTY), ...data, days: data.days || {} };
+    if (data.version === 2 && data.repos) return { version: 2, repos: data.repos };
+    return migrateV1(data);
   } catch {
-    return structuredClone(EMPTY);
+    return emptyStore();
   }
+}
+
+// 旧版是单仓库平铺结构，升级时按 meta.repo.fullName 挂到仓库键下
+function migrateV1(data) {
+  const store = emptyStore();
+  const key = data?.meta?.repo?.fullName;
+  if (key) {
+    store.repos[key] = {
+      days: data.days || {},
+      npm: data.npm || {},
+      releases: data.releases || [],
+      meta: data.meta || {},
+    };
+  }
+  return store;
 }
 
 export function saveStore(store, path = STORE_PATH) {
@@ -21,31 +38,40 @@ export function saveStore(store, path = STORE_PATH) {
   return store;
 }
 
+export function repoStore(store, key) {
+  if (!store.repos[key]) store.repos[key] = emptySlice();
+  return store.repos[key];
+}
+
+export function hasRepo(store, key) {
+  return Boolean(store.repos[key]);
+}
+
 const keyOf = (iso) => String(iso).slice(0, 10);
 
-export function mergeTraffic(store, views, clones) {
+export function mergeTraffic(slice, views, clones) {
   const rows = [...(views?.views || []), ...(clones?.clones || [])];
   for (const v of views?.views || []) {
     const k = keyOf(v.timestamp);
-    store.days[k] = { ...(store.days[k] || {}), d: k, v: v.count, u: v.uniques };
+    slice.days[k] = { ...(slice.days[k] || {}), d: k, v: v.count, u: v.uniques };
   }
   for (const c of clones?.clones || []) {
     const k = keyOf(c.timestamp);
-    store.days[k] = { ...(store.days[k] || {}), d: k, c: c.count, cu: c.uniques };
+    slice.days[k] = { ...(slice.days[k] || {}), d: k, c: c.count, cu: c.uniques };
   }
   // API window totals are the only correct unique counts; daily uniques must never be summed
-  store.meta.views = { total: views?.count ?? null, uniques: views?.uniques ?? null, at: new Date().toISOString() };
-  store.meta.clones = { total: clones?.count ?? null, uniques: clones?.uniques ?? null, at: new Date().toISOString() };
-  return { store, rows: rows.length };
+  slice.meta.views = { total: views?.count ?? null, uniques: views?.uniques ?? null, at: new Date().toISOString() };
+  slice.meta.clones = { total: clones?.count ?? null, uniques: clones?.uniques ?? null, at: new Date().toISOString() };
+  return { slice, rows: rows.length };
 }
 
-export function mergeNpm(store, daily) {
-  if (!Array.isArray(daily)) return store;
-  for (const r of daily) store.npm[r.d] = r.n;
-  return store;
+export function mergeNpm(slice, daily) {
+  if (!Array.isArray(daily)) return slice;
+  for (const r of daily) slice.npm[r.d] = r.n;
+  return slice;
 }
 
-export function series(store, days, npmDaily = {}) {
+export function series(slice, days, npmDaily = {}) {
   const out = [];
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -53,19 +79,19 @@ export function series(store, days, npmDaily = {}) {
     const d = new Date(today);
     d.setUTCDate(d.getUTCDate() - i);
     const k = d.toISOString().slice(0, 10);
-    const row = store.days[k] || {};
+    const row = slice.days[k] || {};
     out.push({
       d: k,
       v: row.v ?? null,
       u: row.u ?? null,
       c: row.c ?? null,
       cu: row.cu ?? null,
-      n: npmDaily[k] ?? store.npm[k] ?? null,
+      n: npmDaily[k] ?? slice.npm[k] ?? null,
     });
   }
   return out;
 }
 
-export function storedDays(store) {
-  return Object.keys(store.days).length;
+export function storedDays(slice) {
+  return Object.keys(slice.days).length;
 }

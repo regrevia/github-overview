@@ -3,12 +3,16 @@ import { readConfig, writeConfig } from "./config.mjs";
 const DEFAULT_MODEL = "deepseek-chat";
 
 export function templateSummary(ctx) {
-  const { uniques, external, stars, npmWeek, days } = ctx;
+  const { uniques, external, stars, npmWeek, days, covered } = ctx;
   const lines = [];
-  if (uniques != null) lines.push(`近 ${days} 天约 ${uniques} 人来看过仓库。`);
+  // 覆盖期短于所选范围时按实际天数说，不把 14 天的数说成 30 天
+  const span = covered && covered < days ? covered : days;
+  if (uniques == null) lines.push(`这 ${span} 天还没有访问记录。`);
+  else if (uniques === 0) lines.push(`这 ${span} 天还没有访客。`);
+  else lines.push(`近 ${span} 天约 ${uniques} 人来看过仓库。`);
   const ic = external.issues.length, pc = external.pulls.length;
   lines.push(ic || pc ? `外部提了 ${ic} 个 issue、${pc} 个 PR。` : `这段时间没有外部 issue 或 PR。`);
-  if (stars != null) lines.push(`Star 到 ${stars}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
+  if (stars) lines.push(`Star 到 ${stars}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
   return lines;
 }
 
