@@ -41,7 +41,7 @@ export function createApp({ repo, days = 7 } = {}) {
     const range = await npm.range(new Date(Date.now() - 400 * 864e5), new Date());
     if (Array.isArray(range)) mergeNpm(store, range);
     const week = await npm.week().catch(() => null);
-    if (week && Number.isFinite(week.downloads)) store.meta.npmWeek = week.downloads;
+    if (Number.isFinite(week)) store.meta.npmWeek = week;
     store.meta.repo = repoInfo || store.meta.repo || null;
     const prefix = `/${target.owner}/${target.name}`;
     store.meta.paths = (paths || []).map((p) => ({

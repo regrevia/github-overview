@@ -1,6 +1,6 @@
 {
   "name": "github-overview",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Private dashboard for your own GitHub repos: traffic, clones, npm downloads and an AI summary in one view.",
   "type": "module",
   "bin": {
