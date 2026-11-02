@@ -183,7 +183,7 @@
   <header>
     <span class="brand">github-overview</span>
     <span class="sep"></span>
-    <div class="repo"><span>regrevia /</span> dsh-chat-link-actions <span class="caret">▾</span></div>
+    <div class="repo"><span id="repo-owner">owner /</span> <span id="repo-name">repo</span> <span class="caret">▾</span></div>
     <div class="spacer"></div>
     <div class="seg" id="seg">
       <button data-r="7" class="on">7 天</button>
@@ -257,7 +257,7 @@
       <section class="sec">
         <div class="head"><h2>贡献</h2></div>
         <div class="stats">
-          <div><span>issue</span><b id="s-issues">1 个</b><em id="s-issues-sub">已关闭，来自 suyunxing</em></div>
+          <div><span>issue</span><b id="s-issues">1 个</b><em id="s-issues-sub">已关闭</em></div>
           <div><span>PR</span><b id="s-prs">1 个</b><em id="s-prs-sub">已合并，+118 −5</em></div>
           <div><span>安全告警</span><b id="s-alerts">未开启</b><em id="s-alerts-sub">无数据</em></div>
         </div>
@@ -633,6 +633,8 @@ function applyLive(json) {
     RANKS = [["从哪来", json.referrers.slice(0, 4).map(r => [r.from.replace(/^www\./, ""), r.n])]];
   }
   const repo = json.repo || {};
+  if (repo.owner) document.getElementById("repo-owner").textContent = repo.owner + " /";
+  if (repo.name) document.getElementById("repo-name").textContent = repo.name;
   const c = json.contributions || { issues: [], pulls: [] };
   const ic = c.issues.length, pc = c.pulls.length;
   document.getElementById("k-contrib").textContent = ic + pc;
