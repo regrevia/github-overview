@@ -1,0 +1,13 @@
+{
+  "name": "github-overview",
+  "version": "0.1.0",
+  "description": "Private dashboard for your own GitHub repos: traffic, clones, npm downloads and an AI summary in one view.",
+  "type": "module",
+  "bin": { "github-overview": "bin/cli.mjs" },
+  "files": ["bin", "src", "public", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node bin/cli.mjs" },
+  "keywords": ["github", "traffic", "analytics", "npm", "dashboard", "self-hosted"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/regrevia/github-overview.git" }
+}

@@ -1,0 +1,74 @@
+# github-overview 设计说明
+
+## 1. 形态结论
+
+做成独立的 npm 包，一行命令起一个本地页面，不做 DSH 插件。
+
+- 数据要落盘：GitHub traffic 只有 14 天，30/90 天视图必须靠本地快照累积，插件进程不保证常驻。
+- 要能给别人用：npm 包里带页面和抓取逻辑，别人填自己的 token 就能跑。
+- 插件形态只能挂在 DSH 里，token 和存储都得宿主给，发不了 npm。
+
+## 2. 口径词典
+
+GitHub 的 traffic 只给两个维度：次数和人数。所有让人看不懂的词都从这里来。
+
+| 界面用词 | 接口 | 含义 | 易混淆点 |
+| --- | --- | --- | --- |
+| 浏览 | views.count | 打开页面次数 | 一个人刷新五次算五次 |
+| 浏览人数 | views.uniques | 去重人数（按天去重后，14 天口径由接口给总数） | 不是"独立访客"这类黑话，就是人数 |
+| 克隆 | clones.count | git clone 次数 | 与浏览不同指标，不能相加 |
+| 克隆人数 | clones.uniques | 去重人数 | — |
+| 人均 | count ÷ uniques | 平均每人几次 | 克隆人均 3.4 说明镜像/CI 在反复拉 |
+
+GitHub **不提供**克隆来源。界面上不假装知道，只用"多来自镜像和 CI"这种基于人均的推断。
+
+## 3. 页面 vs 来源
+
+两个不同接口，回答不同问题，不能混在一组柱子里：
+
+- `traffic/popular/paths`：仓库**内部**被看了哪些页面（仓库主页、issues 列表、README、某次 actions 运行）。
+- `traffic/popular/referrers`：从**哪个站**跳进来的（GitHub 站内、Google、直接访问）。
+
+新仓库的来源通常只有 GitHub 站内十几条，做图没意义，因此降级为一行统计：`从哪进来 13 次 / 全部是 GitHub 站内`。等外部来源有量了再升级成图表。
+
+## 4. 图表清单
+
+| 区块 | 形式 | 为什么 |
+| --- | --- | --- |
+| 流量 | 折线 + 面积，双轴 | 浏览和克隆量级差 2 倍以上，单轴会把浏览压平 |
+| 下载 | 柱状 | npm 是离散的每日量；缺数据画虚线短桩，不画 0 |
+| 构成 | 环形图（npm 版本占比）+ 横向条形（页面） | 版本占比是唯一有意义的"份额"；页面分布用条形比饼图更易读 |
+| 谁在访问 | 三个统计块 | 次数、人数、人数把"独立"讲成人话，不用图 |
+| 摘要 | 三句话 | 一句一个结论，带数字 |
+
+每屏主图不超过两张，浅色/深色两套 token，控件 8px、面板 12px 圆角，无渐变无光晕。
+
+## 5. 现有项目对比
+
+| 项目 | 能做什么 | 缺什么 |
+| --- | --- | --- |
+| vladkens/ghstats | MIT，Rust，SQLite 小时级同步，JSON API | 只看 GitHub，无 npm，无发版标注，无摘要 |
+| repohistory/repohistory | AGPL，Node 服务 | 同上，且 AGPL 不适合直接改造成 npm 包 |
+| star-history / npm-stat / npmtrends | 单指标趋势 | 没有跨源统一时间轴 |
+
+差异点：多源绑定 + 发版事件标注 + AI 摘要。ghstats 的小时级快照与差分思路可以复用其数据模型，代码不移植。
+
+## 6. 存储
+
+`~/.config/github-overview/store.json`：每天一条 `{date, views, uniques, clones, cloneUniques, npm, versions}`。累计型指标（Docker pulls 等）存累计值，展示时按日差分。
+
+## 7 外部贡献口径
+
+只统计外部人的 issue / PR / 安全告警，作者自己提的不计，所以「贡献」区块和流量区块分开算。
+
+- 外部 = `author.login` 不在 { 仓库 owner, 配置里的 self 别名列表 } 内；bot 不专门区分。
+- issue：窗口内新建数、已关闭数、最近一个外部 issue 的作者登录名。
+- PR：窗口内新建数、已合并数、合并进主干的 +/− 行数。
+- 安全告警：Dependabot / code scanning / secret scanning 各自的告警数；接口未启用（403/404）显示「未开启」，不显示 0，也不弹权限错误。
+- 实现：Search API 一次取 `repo:o/r is:issue created:>=D` 与 `is:pr`，本地按作者过滤；告警走 `/dependabot/alerts`、`/code-scanning/alerts`、`/secret-scanning/alerts`，403/404 归一为未开启。
+
+## 8 摘要口径
+
+摘要只说三件事：本窗口大概多少人来看、外部给了什么反馈、仓库涨了多少。
+
+不解释流量为什么涨（发版带的、镜像缓存、CI 克隆），不判断谁是机器。预估真实用户 = 访客人数（API 的 uniques 窗口值），它已经是去重后的人；克隆数不参与人数估算，因为镜像和 CI 会重复拉取。
