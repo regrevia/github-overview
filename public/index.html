@@ -668,10 +668,13 @@ const kViewsSub = document.getElementById("k-views-sub");
 
 
 const rangeNote = document.getElementById("range-note");
-let currentRange = 7;
+let currentRange = [7, 30, 90].includes(Number(new URLSearchParams(location.search).get("days"))) ? Number(new URLSearchParams(location.search).get("days")) : 7;
 
 function render(days) {
   currentRange = days;
+  const u = new URL(location.href);
+  if (days === 7) u.searchParams.delete("days"); else u.searchParams.set("days", String(days));
+  history.replaceState(null, "", u);
   const dom = domain(days);
   const recs = dom.filter(d => d.rec).map(d => d.rec);
   const tv = recs.reduce((s, r) => s + r.v, 0);
@@ -1117,11 +1120,14 @@ async function pull(days, force) {
   }
 }
 
+let SUM_SEQ = 0;
 async function loadSummary(days) {
+  const seq = ++SUM_SEQ;
   try {
     const res = await fetch("/api/summary?days=" + days + "&repo=" + encodeURIComponent(currentRepo), { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok || seq !== SUM_SEQ) return;
     const data = await res.json();
+    if (seq !== SUM_SEQ) return;
     const lines = data.lines || [];
     ["sum-1", "sum-2", "sum-3"].forEach((id, i) => {
       const node = document.getElementById(id);
@@ -1157,7 +1163,9 @@ document.querySelector(".ask button").addEventListener("click", async () => {
 });
 
 
-loadRepos().then(() => pull(7));
+const segInit = document.getElementById("seg");
+[...segInit.children].forEach((b) => b.classList.toggle("on", +b.dataset.r === currentRange));
+loadRepos().then(() => pull(currentRange));
 let rzT;
 addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => render(currentRange), 160); });
 </script>
