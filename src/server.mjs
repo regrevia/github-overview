@@ -280,8 +280,15 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         const windowDays = Number(body.days || days);
         const key = body.repo || ALL;
         const data = build(windowDays, key);
+        const allData = key === ALL ? null : build(windowDays, ALL);
+        const topRepos = key === ALL ? null : targets
+          .map((t) => ({ name: t.name, u: repoStore(store, t.key).meta?.views?.uniques ?? 0 }))
+          .sort((a, b) => b.u - a.u)
+          .slice(0, 5);
         const ans = await askQuestion(
           {
+            allTotal: allData ? allData.totals.uniques : null,
+            topRepos,
             days: windowDays,
             covered: data.range.covered,
             uniques: data.totals.uniques,

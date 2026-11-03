@@ -31,7 +31,8 @@ export function saveAiConfig({ apikey, baseurl, model }) {
 const factLines = (ctx) =>
   [
     `范围：${ctx.scope || "本仓库"}，近 ${ctx.days} 天${ctx.covered && ctx.covered < ctx.days ? `（数据覆盖 ${ctx.covered} 天）` : ""}`,
-    `访客：${ctx.uniques ?? "未知"} 人，浏览 ${ctx.views ?? "未知"} 次`,
+    `访客（去重真人）：${ctx.uniques ?? "未知"} 人，浏览 ${ctx.views ?? "未知"} 次`,
+    ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
     `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
     `stars ${ctx.stars}，npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
     `最热页面：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
@@ -51,7 +52,9 @@ export async function askQuestion(ctx, question) {
         role: "system",
         content:
           "你在回答一个 GitHub 仓库数据看板上的提问。只依据给出的数字回答，1 到 2 句，合计不超过 60 个汉字。" +
-          "数字里没有的直接说没记录，不要猜测。不要解释流量为什么变化，不要提机器、机器人、CI、镜像。直接输出答案。",
+          "访客数就是去重后的真人访客，问多少人时直接用这个数。" +
+          "单仓面板下问跨仓或最热门，用“全站”那一行。" +
+          "数字里没有的说没记录。不要解释变化原因，不要提机器人、CI、镜像。直接输出答案。",
       },
       { role: "user", content: `${factLines(ctx)}\n\n问题：${question}` },
     ],
