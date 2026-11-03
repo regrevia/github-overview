@@ -62,7 +62,11 @@
   .repo { font-size: 16px; font-weight: 600; white-space: nowrap; }
   .repo span { color: var(--label-secondary); font-weight: 400; }
   .caret { color: var(--label-secondary); font-weight: 400; }
-  .repo-wrap { position: relative; }
+  .repo-wrap { position: relative; display: flex; align-items: center; gap: 4px; }
+  .repo-open { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center;
+    border-radius: 6px; color: var(--label-secondary); }
+  .repo-open:hover { background: var(--border-l1); color: var(--label-primary); }
+  .repo-open[hidden] { display: none; }
   .repo-wrap > .repo { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--label-primary); cursor: pointer; }
   .repo-wrap > .repo:hover { color: var(--label-secondary); }
   .repo-menu { position: absolute; top: 26px; left: -8px; z-index: 20; min-width: 200px; max-height: 260px; overflow: auto;
@@ -195,6 +199,9 @@
     <span class="sep"></span>
     <div class="repo-wrap">
       <button class="repo" id="repo-pick" aria-haspopup="true" aria-expanded="false"><span id="repo-owner"></span><span id="repo-name">全部仓库</span> <span class="caret">▾</span></button>
+      <a class="repo-open" id="repo-open" target="_blank" rel="noopener" aria-label="在 GitHub 打开" hidden>
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M6.5 3.5h6v6M12.5 3.5 5 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
       <div class="repo-menu" id="repo-menu" hidden></div>
     </div>
     <div class="spacer"></div>
@@ -719,9 +726,11 @@ function applyLive(json) {
   if (repo.fullName === "全部仓库") {
     ownerEl.textContent = "";
     nameEl.textContent = "全部仓库";
+    setRepoLink(null);
   } else {
     ownerEl.textContent = repo.owner ? repo.owner + " /" : "";
     nameEl.textContent = repo.name || "";
+    setRepoLink(repo.fullName);
   }
   const c = json.contributions || { issues: [], pulls: [] };
   const ic = c.issues.length, pc = c.pulls.length;
@@ -761,6 +770,14 @@ function applyLive(json) {
 
 let REPOS = [];
 let currentRepo = "all";
+function setRepoLink(fullName) {
+  const a = document.getElementById("repo-open");
+  if (!a) return;
+  const owner = REPOS[0] ? REPOS[0].key.split("/")[0] : "";
+  const url = fullName ? "https://github.com/" + fullName : owner ? "https://github.com/" + owner : "";
+  if (url) { a.href = url; a.hidden = false; } else a.hidden = true;
+}
+
 const PICK = document.getElementById("repo-pick");
 const MENU = document.getElementById("repo-menu");
 
@@ -795,6 +812,7 @@ async function loadRepos() {
     const cur = REPOS.find((r) => r.key === currentRepo);
     document.getElementById("repo-name").textContent = cur ? cur.key.replace(/^[^/]+\//, "") : "全部仓库";
     document.getElementById("repo-owner").textContent = cur ? cur.key.split("/")[0] + " /" : "";
+    setRepoLink(cur ? cur.key : null);
   } catch (e) {}
 }
 
@@ -814,6 +832,7 @@ MENU.addEventListener("click", (e) => {
   const cur = REPOS.find((r) => r.key === currentRepo);
   document.getElementById("repo-name").textContent = b.textContent;
   document.getElementById("repo-owner").textContent = cur ? cur.key.split("/")[0] + " /" : "";
+  setRepoLink(currentRepo === "all" ? null : currentRepo);
   pull(currentRange, true);
 });
 
