@@ -300,6 +300,43 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
             scope: key === ALL ? `你的 ${targets.length} 个仓库` : key,
           },
           question,
+          [
+            {
+              name: "traffic",
+              description: "查一段时间内某个仓库或全部仓库的访客、浏览、外部 issue/PR、stars、npm 周下载",
+              parameters: { type: "object", properties: { days: { type: "integer", description: "7、30 或 90" }, repo: { type: "string", description: "owner/name，不填就是当前面板范围" } } },
+              run: ({ days: d, repo }) => {
+                const dd = [7, 30, 90].includes(Number(d)) ? Number(d) : windowDays;
+                const k2 = repo && targets.some((t) => t.key === repo) ? repo : key;
+                const data = build(dd, k2);
+                return {
+                  scope: k2 === ALL ? "全部仓库" : k2,
+                  days: dd,
+                  covered: data.range.covered,
+                  visitors: data.totals.uniques,
+                  views: data.totals.views,
+                  issues: data.contributions.issues.length,
+                  pulls: data.contributions.pulls.length,
+                  stars: data.repo.stars,
+                  npmWeek: data.totals.npmWeek,
+                  topPaths: data.paths.slice(0, 3),
+                };
+              },
+            },
+            { name: "list_repos", description: "列出看板绑定的所有仓库", parameters: { type: "object", properties: {} }, run: () => targets.map((t) => t.key) },
+            {
+              name: "sync",
+              description: "实时拉一次某个仓库的最新流量，几秒",
+              parameters: { type: "object", properties: { repo: { type: "string", description: "owner/name" } }, required: ["repo"] },
+              run: async ({ repo }) => {
+                const t = targets.find((x) => x.key === repo);
+                if (!t) return "没有这个仓库";
+                await syncOne(t);
+                const s2 = repoStore(store, t.key);
+                return { repo: t.key, syncedAt: s2.meta?.syncedAt, visitors: s2.meta?.views?.uniques, error: s2.meta?.error || null };
+              },
+            },
+          ],
         );
         return send(200, ans);
       }
