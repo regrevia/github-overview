@@ -122,6 +122,16 @@
   .ranks .track { height: 6px; border-radius: 2px; background: var(--bg-layer-2); overflow: hidden; }
   .ranks .track i { display: block; height: 100%; background: var(--brand); border-radius: 2px; }
   .ranks .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .repo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+  .repo-grid ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .repo-grid li.muted { grid-template-columns: 1fr; font-size: 13px; }
+  .repo-grid li { display: grid; grid-template-columns: 168px 1fr 56px; align-items: center; gap: 10px; font-size: 16px; cursor: pointer; }
+  .repo-grid li:hover .k { color: var(--label-primary); }
+  .repo-grid .k { color: var(--label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .repo-grid .track { height: 6px; border-radius: 2px; background: var(--bg-layer-2); overflow: hidden; }
+  .repo-grid .track i { display: block; height: 100%; background: var(--brand); border-radius: 2px; }
+  .repo-grid .v { text-align: right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 900px) { .repo-grid { grid-template-columns: 1fr; } }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 12px; }
   .stats div { display: flex; flex-direction: column; gap: 2px; }
   .stats span { font-size: 12px; color: var(--label-secondary); }
@@ -293,6 +303,17 @@
           <div><span>下载日均</span><b id="impact-npm">—</b><em id="impact-npm-sub"></em></div>
           <div><span>窗口</span><b id="impact-cover">—</b><em></em></div>
         </div>
+      </section>
+
+      <section class="sec" id="sec-repos" hidden>
+        <div class="head">
+          <h2>项目</h2>
+          <div class="srcs" id="ov-sort">
+            <span class="src on" data-sort="u">访客</span>
+            <span class="src off" data-sort="n">下载</span>
+          </div>
+        </div>
+        <div class="repo-grid" id="repo-list"></div>
       </section>
 
       <section class="sec">
@@ -725,6 +746,65 @@ function renderImpact(it) {
   document.getElementById("impact-cover").textContent = `前 ${it.before?.views?.days ?? 0} / 后 ${it.after?.views?.days ?? 0} 天`;
 }
 
+let OVERVIEW = [];
+let OV_SORT = "u";
+
+function drawOverview() {
+  document.getElementById("sec-repos").hidden = !OVERVIEW.length;
+  const node = document.getElementById("repo-list");
+  node.textContent = "";
+  if (!OVERVIEW.length) return;
+  const k = OV_SORT === "u" ? "uniques" : "npm";
+  const all = [...OVERVIEW].sort((a, b) => (b[k] ?? 0) - (a[k] ?? 0));
+  // 零访客的仓不占行，折成一句
+  const used = all.filter((r) => (r[k] ?? 0) > 0);
+  const rest = all.length - used.length;
+  const rows = used.length ? used : all.slice(0, 6);
+  const max = Math.max(...rows.map((r) => r[k] ?? 0), 1);
+  const cols = 2;
+  const per = Math.ceil(rows.length / cols);
+  for (let c = 0; c < cols; c++) {
+    const ul = document.createElement("ul");
+    for (const r of rows.slice(c * per, (c + 1) * per)) {
+      const li = document.createElement("li");
+      const name = document.createElement("span");
+      name.className = "k";
+      name.textContent = r.name;
+      const track = document.createElement("span");
+      track.className = "track";
+      const bar = document.createElement("i");
+      bar.style.width = Math.max(2, ((r[k] ?? 0) / max) * 100) + "%";
+      track.appendChild(bar);
+      const v = document.createElement("span");
+      v.className = "v";
+      v.textContent = r[k] == null ? "—" : fmt(r[k]);
+      li.title = r.key;
+      li.append(name, track, v);
+      li.addEventListener("click", () => switchRepo(r.key));
+      ul.appendChild(li);
+    }
+    if (c === cols - 1 && rest) {
+      const li = document.createElement("li");
+      li.className = "muted";
+      li.style.cursor = "default";
+      const sp = document.createElement("span");
+      sp.className = "k";
+      sp.textContent = `另有 ${rest} 个没有访客`;
+      li.appendChild(sp);
+      ul.appendChild(li);
+    }
+    node.appendChild(ul);
+  }
+}
+
+document.getElementById("ov-sort").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-sort]");
+  if (!b) return;
+  OV_SORT = b.dataset.sort;
+  [...document.getElementById("ov-sort").children].forEach((x) => x.classList.toggle("on", x === b));
+  drawOverview();
+});
+
 function applyLive(json) {
   Object.assign(LIVE, json);
   LIVE_SET = true;
@@ -789,6 +869,8 @@ function applyLive(json) {
   const opened = al ? ["dependabot", "codeScanning", "secretScanning"].filter(k => al[k]?.available) : [];
   const total = al ? opened.reduce((s, k) => s + (al[k].open || 0), 0) : null;
   renderImpact(json.impact);
+  OVERVIEW = json.repos || [];
+  drawOverview();
   document.getElementById("s-alerts").textContent = !al || !opened.length ? "未开启" : total ? total + " 条" : "无";
   document.getElementById("s-alerts-sub").textContent = !al || !opened.length ? "无数据" : total ? "待处理" : "已开启";
   const t = json.totals || {};
@@ -856,17 +938,20 @@ PICK.addEventListener("click", (e) => {
   PICK.setAttribute("aria-expanded", String(open));
 });
 
+function switchRepo(key) {
+  currentRepo = key;
+  paintRepos();
+  const cur = REPOS.find((r) => r.key === key);
+  document.getElementById("repo-name").textContent = key === "all" ? "全部仓库" : key.replace(/^[^/]+\//, "");
+  document.getElementById("repo-owner").textContent = key === "all" ? "" : key.split("/")[0] + " /";
+  setRepoLink(key === "all" ? null : key);
+  pull(currentRange, true);
+}
+
 MENU.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
-  currentRepo = b.dataset.key;
-  [...MENU.children].forEach((x) => x.classList.toggle("on", x === b));
-  paintRepos();
-  const cur = REPOS.find((r) => r.key === currentRepo);
-  document.getElementById("repo-name").textContent = b.textContent;
-  document.getElementById("repo-owner").textContent = cur ? cur.key.split("/")[0] + " /" : "";
-  setRepoLink(currentRepo === "all" ? null : currentRepo);
-  pull(currentRange, true);
+  switchRepo(b.dataset.key);
 });
 
 document.addEventListener("click", () => closeMenu());

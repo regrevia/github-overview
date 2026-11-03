@@ -180,6 +180,20 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         cloneUniques: sumOf((s) => s.meta?.clones?.uniques),
         npmWeek: sumOf((s) => s.meta?.npmWeek),
       },
+      repos: targets
+        .map((t) => {
+          const r = repoStore(store, t.key);
+          const w = series(r, windowDays, r.npm || {});
+          return {
+            key: t.key,
+            name: t.key.split("/")[1] || t.key,
+            uniques: r.meta?.views?.uniques ?? null,
+            views: w.reduce((a, x) => a + (x.v ?? 0), 0),
+            npm: w.reduce((a, x) => a + (x.n ?? 0), 0),
+            stars: r.meta?.stars ?? null,
+          };
+        })
+        .sort((a, b) => (b.uniques ?? 0) - (a.uniques ?? 0)),
       paths: [...paths.values()].sort((a, b) => b.n - a.n),
       referrers: [...referrers.values()].sort((a, b) => b.n - a.n),
       releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30),
