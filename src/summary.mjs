@@ -31,8 +31,8 @@ export function saveAiConfig({ apikey, baseurl, model }) {
 const mmdd = (t) => (t ? String(t).slice(5, 10) : "");
 const detailLines = (external) => {
   const rows = [
-    ...(external.pulls || []).slice(0, 4).map((p) => `PR #${p.number} ${p.author} ${p.merged ? "已合并" : p.state} ${mmdd(p.mergedAt || p.closedAt || p.createdAt)}`),
-    ...(external.issues || []).slice(0, 4).map((i) => `issue #${i.number} ${i.author} ${i.state} ${mmdd(i.closedAt || i.createdAt)}`),
+    ...(external.pulls || []).slice(0, 4).map((p) => `PR #${p.number} ${p.author} ${p.merged ? "已合并" : p.state} ${p.comments ?? 0} 回`),
+    ...(external.issues || []).map((i) => `issue #${i.number} ${i.author} ${i.state} ${i.comments ?? 0} 回${i.state === "open" && !i.comments ? "（没回）" : ""}`),
   ];
   return rows.length ? [`外部明细：${rows.join("；")}`] : [];
 };
@@ -44,6 +44,8 @@ const factLines = (ctx) =>
     ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
     `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
     ...detailLines(ctx.external),
+    ...(ctx.funnel ? [`漏斗：浏览 ${ctx.funnel.views ?? "—"} → 仓库主页 ${ctx.funnel.home ?? "—"} → npm 下载 ${ctx.funnel.npm ?? "—"}`] : []),
+    ...(ctx.impacts?.length ? [`各仓最近发版日均浏览：${ctx.impacts.slice(0, 6).map((i) => `${i.name} ${i.before?.views?.avg ?? "—"}→${i.after?.views?.avg ?? "—"}`).join("、")}`] : []),
     ...(ctx.impact ? [`最近发版 ${ctx.impact.version}（${mmdd(ctx.impact.at)}）：前 7 天日均浏览 ${ctx.impact.before.views?.avg ?? "—"}、下载 ${ctx.impact.before.npm?.avg ?? "—"}，后 7 天 ${ctx.impact.after.views?.avg ?? "—"}、${ctx.impact.after.npm?.avg ?? "—"}`] : []),
     `stars ${ctx.stars}，npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
     `最热页面：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
@@ -101,7 +103,11 @@ export async function askQuestion(ctx, question, tools = []) {
       }
       msg = await call(messages, true);
     }
-    const text = (msg?.content || "").trim();
+    let text = (msg?.content || "").trim();
+    if (!text) {
+      const again = await call(messages.concat([{ role: "user", content: "直接回答上面的问题，不要用工具。" }]), false).catch(() => null);
+      text = (again?.content || "").trim();
+    }
     if (!text) return { source: "error", answer: "AI 回了空内容。" };
     return { source: "ai", answer: text.replace(/\s+/g, " ").slice(0, 400) };
   } catch (e) {

@@ -122,9 +122,18 @@
   .ranks .track { height: 6px; border-radius: 2px; background: var(--bg-layer-2); overflow: hidden; }
   .ranks .track i { display: block; height: 100%; background: var(--brand); border-radius: 2px; }
   .ranks .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .stats em a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  .cmp ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+  .cmp li { display: grid; grid-template-columns: 172px 148px 1fr 60px; gap: 12px; align-items: baseline; font-size: 16px; cursor: pointer; }
+  .cmp li:hover .k { color: var(--label-primary); }
+  .cmp .k { color: var(--label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmp .ver { font-size: 12px; color: var(--label-secondary); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmp .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .cmp .d { text-align: right; font-size: 12px; color: var(--label-secondary); font-variant-numeric: tabular-nums; }
   .repo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
   .repo-grid ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .repo-grid li.muted { grid-template-columns: 1fr; font-size: 13px; }
+  .cmp li.muted { grid-template-columns: 1fr; font-size: 13px; }
   .repo-grid li { display: grid; grid-template-columns: 168px 1fr 56px; align-items: center; gap: 10px; font-size: 16px; cursor: pointer; }
   .repo-grid li:hover .k { color: var(--label-primary); }
   .repo-grid .k { color: var(--label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -302,6 +311,20 @@
           <div><span>浏览日均</span><b id="impact-views">—</b><em id="impact-views-sub"></em></div>
           <div><span>下载日均</span><b id="impact-npm">—</b><em id="impact-npm-sub"></em></div>
           <div><span>窗口</span><b id="impact-cover">—</b><em></em></div>
+        </div>
+      </section>
+
+      <section class="sec" id="sec-cmp" hidden>
+        <div class="head"><h2>发版对比</h2></div>
+        <div class="cmp"><ul id="cmp-list"></ul></div>
+      </section>
+
+      <section class="sec" id="sec-funnel" hidden>
+        <div class="head"><h2>漏斗</h2></div>
+        <div class="stats">
+          <div><span>浏览</span><b id="f-views">—</b><em></em></div>
+          <div><span>仓库主页</span><b id="f-home">—</b><em id="f-home-sub"></em></div>
+          <div><span>npm 下载</span><b id="f-npm">—</b><em id="f-npm-sub"></em></div>
         </div>
       </section>
 
@@ -805,6 +828,51 @@ document.getElementById("ov-sort").addEventListener("click", (e) => {
   drawOverview();
 });
 
+function pctText(d) {
+  if (d === null || d === undefined) return "";
+  if (d >= 1000) return "×" + Math.round(d / 100);
+  return (d > 0 ? "+" : "") + d + "%";
+}
+
+function renderImpacts(list) {
+  const rows = (list || []).filter((i) => !i.limited && i.before?.views?.avg != null && i.after?.views?.avg != null);
+  document.getElementById("sec-cmp").hidden = !rows.length;
+  const node = document.getElementById("cmp-list");
+  node.textContent = "";
+  const rank = [...rows].sort((a, b) => (b.delta?.views ?? -1e9) - (a.delta?.views ?? -1e9)).slice(0, 8);
+  for (const r of rank) {
+    const li = document.createElement("li");
+    li.title = `${r.key} · 下载日均 ${r.before?.npm?.avg ?? "—"} → ${r.after?.npm?.avg ?? "—"}`;
+    const k = document.createElement("span"); k.className = "k"; k.textContent = r.name;
+    const ver = document.createElement("span"); ver.className = "ver"; ver.textContent = `${r.version} · ${String(r.at).slice(5)}`;
+    const v = document.createElement("span"); v.className = "v"; v.textContent = `${fmt(r.before.views.avg)} → ${fmt(r.after.views.avg)}`;
+    const d = document.createElement("span"); d.className = "d"; d.textContent = pctText(r.delta?.views);
+    li.append(k, ver, v, d);
+    li.addEventListener("click", () => switchRepo(r.key));
+    node.appendChild(li);
+  }
+  if (rows.length > rank.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.style.cursor = "default";
+    const sp = document.createElement("span"); sp.className = "k"; sp.textContent = `另有 ${rows.length - rank.length} 个`;
+    li.appendChild(sp);
+    node.appendChild(li);
+  }
+}
+
+function renderFunnel(f) {
+  const sec = document.getElementById("sec-funnel");
+  if (!f || f.views == null) { sec.hidden = true; return; }
+  sec.hidden = false;
+  document.getElementById("f-views").textContent = fmt(f.views);
+  document.getElementById("f-home").textContent = f.home == null ? "—" : fmt(f.home);
+  document.getElementById("f-home-sub").textContent = f.home == null ? "" : Math.round((f.home / f.views) * 100) + "% 浏览";
+  document.getElementById("f-npm").textContent = f.npm == null ? "—" : fmt(f.npm);
+  const r = f.npm == null ? null : f.npm / f.views;
+  document.getElementById("f-npm-sub").textContent = r == null ? "" : r >= 1 ? `×${r.toFixed(1)} 浏览` : Math.round(r * 100) + "% 浏览";
+}
+
 function applyLive(json) {
   Object.assign(LIVE, json);
   LIVE_SET = true;
@@ -855,11 +923,24 @@ function applyLive(json) {
   document.getElementById("k-rel-sub").textContent = rels.length
     ? (repo.fullName === "全部仓库" ? "最近 " + label(rels[0].at) : rels[rels.length - 1].tag + " → " + rels[0].tag)
     : "本窗口无发版";
-  const iss = c.issues[0];
+  const pending = c.issues.filter((x) => x.state === "open" && !x.comments);
   document.getElementById("s-issues").textContent = ic + " 个";
-  document.getElementById("s-issues-sub").textContent = iss
-    ? (iss.state === "closed" ? "已关闭，" : "开着，") + "来自 " + iss.author
-    : "没有外部 issue";
+  const issub = document.getElementById("s-issues-sub");
+  issub.textContent = "";
+  if (!ic) {
+    issub.textContent = "没有外部 issue";
+  } else if (!pending.length) {
+    issub.textContent = "都已关闭或已回";
+  } else {
+    const one = pending[0];
+    const a = document.createElement("a");
+    a.href = one.url;
+    a.target = "_blank";
+    a.rel = "noreferrer";
+    a.textContent = `${one.repo ? one.repo.split("/")[1] : ""} #${one.number}`.trim();
+    issub.textContent = `${pending.length} 个没回：`;
+    issub.appendChild(a);
+  }
   const pr = c.pulls[0];
   document.getElementById("s-prs").textContent = pc + " 个";
   document.getElementById("s-prs-sub").textContent = pr
@@ -869,10 +950,47 @@ function applyLive(json) {
   const opened = al ? ["dependabot", "codeScanning", "secretScanning"].filter(k => al[k]?.available) : [];
   const total = al ? opened.reduce((s, k) => s + (al[k].open || 0), 0) : null;
   renderImpact(json.impact);
+  renderImpacts(json.impacts);
+  renderFunnel(json.funnel);
   OVERVIEW = json.repos || [];
   drawOverview();
-  document.getElementById("s-alerts").textContent = !al || !opened.length ? "未开启" : total ? total + " 条" : "无";
-  document.getElementById("s-alerts-sub").textContent = !al || !opened.length ? "无数据" : total ? "待处理" : "已开启";
+  const atype = { dependabot: "依赖漏洞", codeScanning: "代码扫描", secretScanning: "密钥泄漏" };
+  const asub = document.getElementById("s-alerts-sub");
+  const aval = document.getElementById("s-alerts");
+  aval.textContent = !al || !opened.length ? "未开启" : total ? total + " 条" : "无";
+  asub.textContent = "";
+  asub.removeAttribute("title");
+  if (!al || !opened.length) {
+    asub.textContent = "无数据";
+  } else if (!total) {
+    asub.textContent = "已开启";
+  } else if (Array.isArray(json.repos)) {
+    const flat = opened.flatMap((k) => (al[k].repos || []).filter((r) => r.open > 0).map((r) => ({ type: k, ...r })));
+    flat.sort((x, y) => y.open - x.open);
+    const top = flat[0];
+    if (top) {
+      const a = document.createElement("a");
+      a.href = `https://github.com/${top.key}/security/${top.type === "dependabot" ? "dependabot" : top.type === "codeScanning" ? "code-scanning" : "secret-scanning"}`;
+      a.target = "_blank";
+      a.rel = "noreferrer";
+      a.textContent = `${top.key.split("/")[1]} ${top.open} 条`;
+      asub.appendChild(a);
+      asub.append(` · ${atype[top.type]}`);
+      asub.title = flat.map((r) => `${r.key.split("/")[1]} ${atype[r.type]} ${r.open}`).join("\n");
+    } else {
+      asub.textContent = "待处理";
+    }
+  } else {
+    const parts = opened.filter((k) => al[k].open > 0).map((k) => `${atype[k]} ${al[k].open}`);
+    const a = document.createElement("a");
+    a.href = `https://github.com/${json.repo.fullName}/security`;
+    a.target = "_blank";
+    a.rel = "noreferrer";
+    asub.append(a);
+    const txt = parts.length ? parts.join("、") : "待处理";
+    a.textContent = txt;
+    asub.title = "依赖漏洞 / 代码扫描 / 密钥泄漏";
+  }
   const t = json.totals || {};
   document.getElementById("k-npm").textContent = t.npmWeek != null ? fmt(t.npmWeek) : "—";
   const days = json.range?.storedDays || 0;

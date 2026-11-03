@@ -158,7 +158,14 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       for (const i of m.activity?.issues || []) issues.push({ ...i, repo: t.key });
       for (const p of m.activity?.pulls || []) pulls.push({ ...p, repo: t.key });
       for (const v of m.npmVers || []) npmVersions.push({ ...v, repo: t.key });
-      for (const k of alertKeys) if (m.alerts?.[k]?.available) alerts[k] = { available: true, open: (alerts[k].open || 0) + (m.alerts[k].open || 0) };
+      for (const k of alertKeys) {
+        if (!m.alerts?.[k]?.available) continue;
+        alerts[k] = {
+          available: true,
+          open: (alerts[k].open || 0) + (m.alerts[k].open || 0),
+          repos: [...(alerts[k].repos || []), { key: t.key, open: m.alerts[k].open || 0 }],
+        };
+      }
     }
     const anyAlert = alertKeys.some((k) => alerts[k].available);
     const repoInfo = slices.reduce(
@@ -194,6 +201,18 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
           };
         })
         .sort((a, b) => (b.uniques ?? 0) - (a.uniques ?? 0)),
+      funnel: {
+        views: sumOf((s) => s.meta?.views?.total),
+        home: [...paths.values()].filter((p) => p.p === "仓库主页").reduce((a, p) => a + p.n, 0) || null,
+        npm: sumOf((s) => s.meta?.npmWeek),
+      },
+      impacts: slices
+        .map(({ t, s }) => {
+          const im = impactOf(s);
+          return im && im.before?.views?.avg ? { key: t.key, name: t.key.split("/")[1] || t.key, ...im } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => (a.limited === b.limited ? b.at.localeCompare(a.at) : a.limited ? 1 : -1)),
       paths: [...paths.values()].sort((a, b) => b.n - a.n),
       referrers: [...referrers.values()].sort((a, b) => b.n - a.n),
       releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30),
@@ -248,7 +267,10 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       chosen = { ...ev, ...r };
     }
     const { before, after } = chosen;
-    const delta = (k) => (before[k]?.avg && after[k]?.avg ? Math.round((after[k].avg / before[k].avg - 1) * 100) : null);
+    const delta = (k) => {
+      const b = before[k]?.avg, a = after[k]?.avg;
+      return b != null && a != null && b !== 0 ? Math.round((a / b - 1) * 100) : null;
+    };
     return { ...chosen, limited: (after.views?.days || 0) < 3, delta: { views: delta("views"), uniques: delta("uniques"), npm: delta("npm") } };
   }
 
@@ -275,6 +297,11 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         npmWeek: meta.npmWeek ?? null,
       },
       paths: meta.paths || [],
+      funnel: {
+        views: views.total ?? null,
+        home: (meta.paths || []).filter((p) => p.p === "仓库主页").reduce((a, p) => a + (p.n || 0), 0) || null,
+        npm: meta.npmWeek ?? null,
+      },
       referrers: meta.referrers || [],
       releases: s.releases || [],
       npmVersions: meta.npmVers || [],
@@ -368,6 +395,8 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
             views: data.totals.views,
             external: data.contributions,
             impact: data.impact,
+            funnel: data.funnel,
+            impacts: data.impacts,
             stars: data.repo.stars,
             npmWeek: data.totals.npmWeek,
             paths: data.paths,
