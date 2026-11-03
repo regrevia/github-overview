@@ -134,6 +134,13 @@
   .repo-grid ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .repo-grid li.muted { grid-template-columns: 1fr; font-size: 13px; }
   .cmp li.muted { grid-template-columns: 1fr; font-size: 13px; }
+  @media (max-width: 560px) {
+    .cmp li { grid-template-columns: 1fr auto; gap: 2px 12px; font-size: 15px; padding: 6px 0; }
+    .cmp .k { grid-column: 1; grid-row: 1; }
+    .cmp .d { grid-column: 2; grid-row: 1; }
+    .cmp .ver { grid-column: 1; grid-row: 2; }
+    .cmp .v { grid-column: 2; grid-row: 2; }
+  }
   .repo-grid li { display: grid; grid-template-columns: 168px 1fr 56px; align-items: center; gap: 10px; font-size: 16px; cursor: pointer; }
   .repo-grid li:hover .k { color: var(--label-primary); }
   .repo-grid .k { color: var(--label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -466,17 +473,28 @@ function flowChart(node, days) {
     }
   });
 
-  const vp = dom.map((d, i) => d.rec ? `${x(i)},${yl(d.rec.v)}` : null);
-  const f = vp.findIndex(Boolean), l = vp.length - 1 - [...vp].reverse().findIndex(Boolean);
-  svg.appendChild(el("path", {
-    d: `M${x(f)},${yl(0)} L` + vp.filter(Boolean).join(" L") + ` L${x(l)},${yl(0)} Z`,
-    fill: c.human, opacity: .14
-  }));
+  const vp = dom.map((d, i) => (d.rec ? { i, pt: `${x(i)},${yl(d.rec.v)}` } : null)).filter(Boolean);
+  // 末尾连续 0 = 当天还没采集到：实线停在最后有数的一天，后面用虚线
+  const recs = dom.filter((d) => d.rec);
+  const avgV = recs.length ? recs.reduce((a, d) => a + (d.rec.v || 0), 0) / recs.length : 0;
+  let cut = dom.length;
+  while (cut > 0 && dom[cut - 1].rec && (dom[cut - 1].rec.v || 0) === 0 && avgV >= 20) cut--;
+  const solidLen = Math.max(1, vp.filter((p) => p.i < cut).length);
+  const solid = vp.slice(0, solidLen), tail = vp.slice(solidLen);
 
   const cp = dom.map((d, i) => d.rec ? `${x(i)},${yr(d.rec.c)}` : null).filter(Boolean).join(" ");
   svg.appendChild(el("polyline", { points: cp, fill: "none", stroke: c.machine, "stroke-width": 1.5, opacity: .9 }));
 
-  svg.appendChild(el("polyline", { points: vp.filter(Boolean).join(" "), fill: "none", stroke: c.human, "stroke-width": 2, "stroke-linejoin": "round" }));
+  const lastSolid = solid[solid.length - 1], firstSolid = solid[0];
+  svg.appendChild(el("path", {
+    d: `M${firstSolid.pt} L` + solid.map((p) => p.pt).join(" L") + ` L${x(lastSolid.i)},${yl(0)} L${x(firstSolid.i)},${yl(0)} Z`,
+    fill: c.human, opacity: .14
+  }));
+  svg.appendChild(el("polyline", { points: solid.map((p) => p.pt).join(" "), fill: "none", stroke: c.human, "stroke-width": 2, "stroke-linejoin": "round" }));
+  if (tail.length) {
+    svg.appendChild(el("polyline", { points: [lastSolid.pt, ...tail.map((p) => p.pt)].join(" "), fill: "none", stroke: c.human, "stroke-width": 1.5, "stroke-dasharray": "3 4", opacity: .55 }));
+    svg.appendChild(el("text", { x: W - P.r - 4, y: yl(0) - 8, "text-anchor": "end", class: "tick-label", fill: c.human, opacity: .75 }, "未采集"));
+  }
 
   const peak = DATA.reduce((a, b) => b.v > a.v ? b : a);
   const pi = dom.findIndex(d => d.rec === peak);
@@ -537,6 +555,8 @@ let RANKS = [
 let PATHS = null;
 let FIRST = null;
 let LIVE_SET = false;
+// 实时数据：拿不到就继续用内置样例，页面始终能看
+const LIVE = { totals: {}, range: { days: 7, storedDays: 0 }, repo: {}, contributions: { issues: [], pulls: [] }, releases: [], paths: [], npmVersions: [], updatedAt: null };
 
 const emptyInto = (node, text) => {
   node.textContent = "";
@@ -745,7 +765,6 @@ try {
   if (saved === "light") document.getElementById("theme").click();
 } catch (e) {}
 // 实时数据：拿不到就继续用内置样例，页面始终能看
-const LIVE = { totals: {}, range: { days: 7, storedDays: 0 }, repo: {}, contributions: { issues: [], pulls: [] }, releases: [], paths: [], npmVersions: [], updatedAt: null };
 const label = iso => String(iso).slice(5, 10);
 const mmdd = iso => label(iso);
 
@@ -1002,7 +1021,7 @@ function applyLive(json) {
 }
 
 let REPOS = [];
-let currentRepo = "all";
+let currentRepo = new URLSearchParams(location.search).get("repo") || "all";
 function setRepoLink(fullName) {
   const a = document.getElementById("repo-open");
   if (!a) return;
@@ -1040,7 +1059,11 @@ async function loadRepos() {
     if (!res.ok) return;
     const data = await res.json();
     REPOS = data.repos || [];
-    if (currentRepo !== "all" && !REPOS.some((r) => r.key === currentRepo)) currentRepo = "all";
+    if (currentRepo !== "all" && !REPOS.some((r) => r.key === currentRepo)) {
+      // 链接里的仓名不完整时按后缀匹配，例如 ?repo=sandvault
+      const hit = REPOS.find((r) => r.key.endsWith("/" + currentRepo) || r.key === currentRepo);
+      currentRepo = hit ? hit.key : "all";
+    }
     paintRepos();
     const cur = REPOS.find((r) => r.key === currentRepo);
     document.getElementById("repo-name").textContent = cur ? cur.key.replace(/^[^/]+\//, "") : "全部仓库";
@@ -1063,6 +1086,9 @@ function switchRepo(key) {
   document.getElementById("repo-name").textContent = key === "all" ? "全部仓库" : key.replace(/^[^/]+\//, "");
   document.getElementById("repo-owner").textContent = key === "all" ? "" : key.split("/")[0] + " /";
   setRepoLink(key === "all" ? null : key);
+  const u = new URL(location.href);
+  if (key === "all") u.searchParams.delete("repo"); else u.searchParams.set("repo", key);
+  history.replaceState(null, "", u);
   pull(currentRange, true);
 }
 
