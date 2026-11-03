@@ -36,11 +36,16 @@ async function listUserRepos(user) {
   const headers = { accept: "application/vnd.github+json", "user-agent": "github-overview" };
   if (token) headers.authorization = `Bearer ${token}`;
   const who = await fetch("https://api.github.com/user", { headers }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const path = who?.login === user ? "/user/repos?affiliation=owner&per_page=100&sort=pushed" : `/users/${encodeURIComponent(user)}/repos?per_page=100&sort=pushed`;
-  const res = await fetch("https://api.github.com" + path, { headers });
-  if (!res.ok) throw new Error(`拉取 ${user} 的仓库失败：${res.status}`);
-  const rows = await res.json();
-  return rows.filter((r) => !r.fork && (r.permissions ? r.permissions.push : true)).map((r) => ({ repo: r.full_name }));
+  const base = who?.login === user ? "/user/repos?affiliation=owner&per_page=100&sort=pushed" : `/users/${encodeURIComponent(user)}/repos?per_page=100&sort=pushed`;
+  const all = [];
+  for (let page = 1; page <= 10; page++) {
+    const res = await fetch(`https://api.github.com${base}&page=${page}`, { headers });
+    if (!res.ok) throw new Error(`拉取 ${user} 的仓库失败：${res.status}`);
+    const rows = await res.json();
+    all.push(...rows);
+    if (rows.length < 100) break;
+  }
+  return all.filter((r) => !r.fork && (r.permissions ? r.permissions.push : true)).map((r) => ({ repo: r.full_name }));
 }
 
 try {

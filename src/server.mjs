@@ -184,10 +184,15 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       referrers: [...referrers.values()].sort((a, b) => b.n - a.n),
       releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30),
       npmVersions,
-      contributions: { issues, pulls, alerts: anyAlert ? alerts : null },
+      contributions: { issues: issues.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)), pulls: pulls.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)), alerts: anyAlert ? alerts : null },
       updatedAt: lastSync,
     };
   }
+
+  const inWindow = (from, to) => (x) => {
+    const at = String(x.mergedAt || x.closedAt || x.createdAt || "").slice(0, 10);
+    return !from || (at >= from && at <= to);
+  };
 
   function buildRepo(windowDays, t) {
     const s = repoStore(store, t.key);
@@ -210,7 +215,11 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       referrers: meta.referrers || [],
       releases: s.releases || [],
       npmVersions: meta.npmVers || [],
-      contributions: { issues: meta.activity?.issues || [], pulls: meta.activity?.pulls || [], alerts: meta.alerts || null },
+      contributions: {
+        issues: (meta.activity?.issues || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
+        pulls: (meta.activity?.pulls || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
+        alerts: meta.alerts || null,
+      },
       updatedAt: meta.syncedAt || lastSync,
     };
   }

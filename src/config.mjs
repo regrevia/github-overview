@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -18,7 +18,12 @@ export function readConfig() {
 
 export function writeConfig(next) {
   mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify(next, null, 2) + "\n");
+  const tmp = `${CONFIG_PATH}.tmp`;
+  writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
+  renameSync(tmp, CONFIG_PATH);
+  try {
+    chmodSync(CONFIG_PATH, 0o600);
+  } catch {}
   return next;
 }
 

@@ -100,8 +100,9 @@ export function makeGithub(token, { owner, name }) {
           const rows = await gh(`${path}?state=open&per_page=100`);
           return { available: true, open: Array.isArray(rows) ? rows.length : 0 };
         } catch (e) {
-          // 403/404 means the feature is off or the token lacks scope: report, never throw
-          return { available: false, open: null, reason: e.status === 404 ? "no-analysis" : "disabled" };
+          // 404: 仓库没开这个功能；403: 多半是 token 没权限；其它按错误处理
+          const reason = e.status === 404 ? "unsupported" : e.status === 403 ? "permission_denied" : "error";
+          return { available: false, open: null, reason, status: e.status ?? null };
         }
       };
       const [dependabot, codeScanning, secretScanning] = await Promise.all([
