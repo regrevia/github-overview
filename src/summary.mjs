@@ -8,7 +8,7 @@ export function templateSummary(ctx) {
   // GitHub 只留 14 天，范围比历史长时说明覆盖了几天，不把 14 天的数说成 30 天
   if (uniques == null) lines.push(`还没有访问记录。`);
   else if (uniques === 0) lines.push(`这段时间还没有访客。`);
-  else lines.push(`约 ${uniques} 人来看过仓库。`);
+  else lines.push(`约 ${Number(uniques).toLocaleString("en-US")} 人来看过仓库。`);
   const ic = external.issues.length, pc = external.pulls.length;
   lines.push(ic || pc ? `外部提了 ${ic} 个 issue、${pc} 个 PR。` : `这段时间没有外部 issue 或 PR。`);
   if (stars) lines.push(`Star 到 ${stars}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
@@ -117,7 +117,7 @@ export async function askQuestion(ctx, question, tools = []) {
 
 export async function aiSummary(ctx) {
   const { apikey, baseurl, model } = readAiConfig();
-  if (!apikey || !baseurl) return { source: "template", lines: templateSummary(ctx) };
+  if (!apikey || !baseurl) return { source: "none", lines: templateSummary(ctx) };
   const url = ENDPOINT(baseurl);
   const facts = factLines(ctx);
   const body = {
@@ -136,15 +136,25 @@ export async function aiSummary(ctx) {
       { role: "user", content: facts },
     ],
   };
-  try {
+  const send = async (payload) => {
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content?.trim();
+    return (data?.choices?.[0]?.message?.content || "").trim();
+  };
+  try {
+    let text = await send(body);
+    if (!text) {
+      text = await send({
+        ...body,
+        max_tokens: 400,
+        messages: [...body.messages, { role: "user", content: "用两句话总结上面这些数字。" }],
+      });
+    }
     if (!text) throw new Error("empty");
     const lines = text.split(/\n+/).map((s) => s.replace(/^[-*\d.、\s]+/, "").trim()).filter(Boolean).slice(0, 3);
     return { source: "ai", lines, model };

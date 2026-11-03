@@ -1104,7 +1104,7 @@ async function loadSummary(days) {
     });
     const at = document.getElementById("sum-at");
     if (at) at.textContent = new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).replace("/", "-");
-    document.getElementById("cfg-toggle").textContent = data.error ? "未连通" : data.source === "ai" ? "已配置" : "配置";
+    document.getElementById("cfg-toggle").textContent = data.source === "none" ? "未连通" : data.source === "ai" ? "已配置" : "模板摘要";
   } catch (e) {}
 }
 
