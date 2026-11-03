@@ -34,11 +34,11 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     const [views, clones, paths, referrers, repoInfo, releases, activity, alerts] = await Promise.all([
       t.gh.views().catch(() => null),
       t.gh.clones().catch(() => null),
-      t.gh.paths().catch(() => []),
-      t.gh.referrers().catch(() => []),
+      t.gh.paths().catch(() => null),
+      t.gh.referrers().catch(() => null),
       t.gh.repo().catch(() => null),
-      t.gh.releases().catch(() => []),
-      t.gh.activity(new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10), self).catch(() => ({ issues: [], pulls: [], selfCount: 0 })),
+      t.gh.releases().catch(() => null),
+      t.gh.activity(new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10), self).catch(() => null),
       t.gh.alerts().catch(() => null),
     ]);
     if (views || clones) mergeTraffic(s, views, clones);
@@ -62,17 +62,19 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     }
     const prefix = `/${t.owner}/${t.name}`;
     s.meta.repo = repoInfo || s.meta.repo || { owner: t.owner, name: t.name };
-    s.meta.paths = (paths || []).map((p) => {
-      const raw = String(p.path || "");
-      const page = raw === prefix || raw === prefix + "/" ? "仓库主页" : raw.replace(prefix, "");
-      return { p: page || "仓库主页", n: p.count, u: p.uniques };
-    });
-    s.meta.referrers = (referrers || []).map((r) => ({ from: r.referrer, n: r.count, u: r.uniques }));
-    s.meta.alerts = alerts;
+    if (paths) {
+      s.meta.paths = paths.map((p) => {
+        const raw = String(p.path || "");
+        const page = raw === prefix || raw === prefix + "/" ? "仓库主页" : raw.replace(prefix, "");
+        return { p: page || "仓库主页", n: p.count, u: p.uniques };
+      });
+    }
+    if (referrers) s.meta.referrers = referrers.map((r) => ({ from: r.referrer, n: r.count, u: r.uniques }));
+    if (alerts) s.meta.alerts = alerts;
     s.meta.npmVers = npmOk ? await t.npm.perVersion().catch(() => []) : [];
-    s.meta.activity = activity;
+    if (activity) s.meta.activity = activity;
     const published = npmOk ? await t.npm.versions().catch(() => []) : [];
-    const merged = new Map();
+    const merged = new Map((s.releases || []).map((r) => [r.tag, r]));
     for (const r of releases || []) merged.set(r.tag_name, { tag: r.tag_name, at: r.published_at, url: r.html_url });
     for (const v of published) if (!merged.has(v.version)) merged.set(v.version, { tag: v.version, at: v.at, url: null });
     s.releases = [...merged.values()]
@@ -159,15 +161,19 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       for (const p of m.activity?.pulls || []) pulls.push({ ...p, repo: t.key });
       for (const v of m.npmVers || []) npmVersions.push({ ...v, repo: t.key });
       for (const k of alertKeys) {
-        if (!m.alerts?.[k]?.available) continue;
-        alerts[k] = {
-          available: true,
-          open: (alerts[k].open || 0) + (m.alerts[k].open || 0),
-          repos: [...(alerts[k].repos || []), { key: t.key, open: m.alerts[k].open || 0 }],
-        };
+        const cell = m.alerts?.[k];
+        if (cell?.available) {
+          alerts[k] = {
+            available: true,
+            open: (alerts[k].open || 0) + (cell.open || 0),
+            repos: [...(alerts[k].repos || []), { key: t.key, open: cell.open || 0 }],
+          };
+        } else if (!alerts[k].available && !alerts[k].blocked && cell?.status === 403) {
+          alerts[k].blocked = "permission_denied";
+        }
       }
     }
-    const anyAlert = alertKeys.some((k) => alerts[k].available);
+    const anyAlert = alertKeys.some((k) => alerts[k].available || alerts[k].blocked);
     const repoInfo = slices.reduce(
       (acc, { s }) => ({
         stars: acc.stars + (s.meta?.repo?.stars || 0),
