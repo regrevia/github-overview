@@ -58,10 +58,10 @@ export async function askQuestion(ctx, question, tools = []) {
     {
       role: "system",
       content:
-        "你在回答一个 GitHub 仓库数据看板上的提问。下面先给了当前口径的数字；缺的先用工具查，查不到再说没记录。" +
-        "可以估算，开头用「约」「大概」并说依据。1 到 2 句，合计不超过 70 个汉字。" +
-        "明细只列了前几条，问具体某条或要链接就用 activity 工具。" +
-        "访客数是去重真人，问多少人直接用它。不谈流量为什么变，不提机器人、CI、镜像。直接输出答案。",
+        "你是这个 GitHub 数据看板的助手。下面给了当前范围已有的数据，需要更多的就用工具查，然后再回答。" +
+        "说清楚数字和结论，可以分析、比较、估算，估算要说明依据。" +
+        "数据里没有的直说没有，不要编造。回答用纯文本，不用 markdown，控制在 3 句以内。" +
+        "访客数口径是去重真人，克隆另算，机器人流量和发布峰值已经排除在外部反馈之外。",
     },
     { role: "user", content: `${factLines(ctx)}\n\n问题：${question}` },
   ];
@@ -77,7 +77,7 @@ export async function askQuestion(ctx, question, tools = []) {
     }
   };
   const call = async (msgs, withTools) => {
-    const body = { model, temperature: 0.2, max_tokens: 300, messages: msgs, ...(withTools && toolDefs.length ? { tools: toolDefs } : {}) };
+    const body = { model, temperature: 0.2, max_tokens: 420, messages: msgs, ...(withTools && toolDefs.length ? { tools: toolDefs } : {}) };
     const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(String(res.status));
     return (await res.json())?.choices?.[0]?.message;
@@ -102,7 +102,7 @@ export async function askQuestion(ctx, question, tools = []) {
     }
     const text = (msg?.content || "").trim();
     if (!text) return { source: "error", answer: "AI 回了空内容。" };
-    return { source: "ai", answer: text.replace(/\s+/g, " ").slice(0, 200) };
+    return { source: "ai", answer: text.replace(/\s+/g, " ").slice(0, 400) };
   } catch (e) {
     return { source: "error", answer: `AI 没回应（${e.message}）` };
   }

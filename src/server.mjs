@@ -325,6 +325,16 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
             },
             { name: "list_repos", description: "列出看板绑定的所有仓库", parameters: { type: "object", properties: {} }, run: () => targets.map((t) => t.key) },
             {
+              name: "daily",
+              description: "按天查浏览/访客曲线，用来回答哪天下滑或上涨",
+              parameters: { type: "object", properties: { days: { type: "integer", description: "7、30 或 90" }, repo: { type: "string", description: "owner/name，不填就是当前面板范围" } } },
+              run: ({ days: d, repo }) => {
+                const dd = [7, 30, 90].includes(Number(d)) ? Number(d) : windowDays;
+                const k2 = repo && targets.some((t) => t.key === repo) ? repo : key;
+                return build(dd, k2).series.map((r) => `${r.d.slice(5)} ${r.v ?? 0}/${r.u ?? 0}`).join("，");
+              },
+            },
+            {
               name: "activity",
               description: "查外部 issue 和 PR 的明细：编号、标题、作者、状态、是否合并、时间、链接",
               parameters: { type: "object", properties: { repo: { type: "string", description: "owner/name，不填就是当前面板范围" } } },
