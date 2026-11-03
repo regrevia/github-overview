@@ -184,9 +184,58 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       referrers: [...referrers.values()].sort((a, b) => b.n - a.n),
       releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30),
       npmVersions,
+      impact: (() => {
+        const all = slices.map(({ s }) => impactOf(s)).filter(Boolean);
+        const ok = all.filter((x) => !x.limited).sort((a, b) => b.at.localeCompare(a.at));
+        return ok[0] || all.sort((a, b) => b.at.localeCompare(a.at))[0] || null;
+      })(),
       contributions: { issues: issues.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)), pulls: pulls.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)), alerts: anyAlert ? alerts : null },
       updatedAt: lastSync,
     };
+  }
+
+  const shiftDay = (d, n) => {
+    const t = new Date(`${d}T00:00:00Z`);
+    t.setUTCDate(t.getUTCDate() + n);
+    return t.toISOString().slice(0, 10);
+  };
+
+  // 最近一次发版前后 7 天的日均，数据不足时如实报覆盖天数
+  function impactOf(s) {
+    const cuts = [
+      ...(s.releases || []).filter((r) => r.at).map((r) => ({ version: r.tag, at: String(r.at).slice(0, 10), url: r.url || null })),
+      ...((s.meta?.npmVers || []).filter((v) => v.at).map((v) => ({ version: v.v || v.version, at: String(v.at).slice(0, 10), url: null }))),
+    ];
+    if (!cuts.length) return null;
+    cuts.sort((a, b) => b.at.localeCompare(a.at));
+    const ev = cuts[0];
+    const rows = series(s, 90, s.npm || {});
+    const avg = (from, to) => {
+      const hit = rows.filter((r) => r.d >= from && r.d <= to);
+      const pick = (k) => {
+        const vals = hit.map((r) => r[k]).filter((v) => v !== null && v !== undefined);
+        if (!vals.length) return null;
+        return { avg: Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10, days: vals.length };
+      };
+      return { views: pick("v"), uniques: pick("u"), npm: pick("n") };
+    };
+    const at = (x) => ({ before: avg(shiftDay(x.at, -7), shiftDay(x.at, -1)), after: avg(shiftDay(x.at, 1), shiftDay(x.at, 7)) });
+    // 刚发的版本后面还没数据，退到最近一个前后都有 3 天以上的版本
+    let chosen = null;
+    for (const c of cuts.slice(0, 30)) {
+      const r = at(c);
+      if (r.before.views?.days >= 3 && r.after.views?.days >= 3) {
+        chosen = { ...c, ...r };
+        break;
+      }
+    }
+    if (!chosen) {
+      const r = at(ev);
+      chosen = { ...ev, ...r };
+    }
+    const { before, after } = chosen;
+    const delta = (k) => (before[k]?.avg && after[k]?.avg ? Math.round((after[k].avg / before[k].avg - 1) * 100) : null);
+    return { ...chosen, limited: (after.views?.days || 0) < 3, delta: { views: delta("views"), uniques: delta("uniques"), npm: delta("npm") } };
   }
 
   const inWindow = (from, to) => (x) => {
@@ -215,6 +264,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       referrers: meta.referrers || [],
       releases: s.releases || [],
       npmVersions: meta.npmVers || [],
+      impact: impactOf(s),
       contributions: {
         issues: (meta.activity?.issues || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
         pulls: (meta.activity?.pulls || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
@@ -303,6 +353,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
             uniques: data.totals.uniques,
             views: data.totals.views,
             external: data.contributions,
+            impact: data.impact,
             stars: data.repo.stars,
             npmWeek: data.totals.npmWeek,
             paths: data.paths,
@@ -328,6 +379,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
                   pulls: data.contributions.pulls.length,
                   stars: data.repo.stars,
                   npmWeek: data.totals.npmWeek,
+                  impact: data.impact,
                   topPaths: data.paths.slice(0, 3),
                 };
               },

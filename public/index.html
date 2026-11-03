@@ -283,6 +283,18 @@
         </div>
       </section>
 
+      <section class="sec" id="sec-impact" hidden>
+        <div class="head">
+          <h2>发版效果</h2>
+          <span class="src" id="impact-ver"></span>
+        </div>
+        <div class="stats">
+          <div><span>浏览日均</span><b id="impact-views">—</b><em id="impact-views-sub"></em></div>
+          <div><span>下载日均</span><b id="impact-npm">—</b><em id="impact-npm-sub"></em></div>
+          <div><span>窗口</span><b id="impact-cover">—</b><em></em></div>
+        </div>
+      </section>
+
       <section class="sec">
         <div class="head"><h2>构成</h2></div>
         <div class="split">
@@ -693,6 +705,26 @@ const LIVE = { totals: {}, range: { days: 7, storedDays: 0 }, repo: {}, contribu
 const label = iso => String(iso).slice(5, 10);
 const mmdd = iso => label(iso);
 
+function renderImpact(it) {
+  const sec = document.getElementById("sec-impact");
+  if (!it) {
+    sec.hidden = true;
+    return;
+  }
+  sec.hidden = false;
+  const pct = (v) => (v === null || v === undefined ? "" : (v > 0 ? "+" : "") + v + "%");
+  const show = (k, id, sub) => {
+    const b = it.before?.[k]?.avg;
+    const a = it.after?.[k]?.avg;
+    document.getElementById(id).textContent = b === null || b === undefined ? "—" : `${b} → ${a ?? "—"}`;
+    document.getElementById(sub).textContent = pct(it.delta?.[k]) || "";
+  };
+  document.getElementById("impact-ver").textContent = `${it.version} · ${String(it.at).slice(5)}${it.limited ? " · 数据不足" : ""}`;
+  show("views", "impact-views", "impact-views-sub");
+  show("npm", "impact-npm", "impact-npm-sub");
+  document.getElementById("impact-cover").textContent = `前 ${it.before?.views?.days ?? 0} / 后 ${it.after?.views?.days ?? 0} 天`;
+}
+
 function applyLive(json) {
   Object.assign(LIVE, json);
   LIVE_SET = true;
@@ -756,6 +788,7 @@ function applyLive(json) {
   const al = c.alerts;
   const opened = al ? ["dependabot", "codeScanning", "secretScanning"].filter(k => al[k]?.available) : [];
   const total = al ? opened.reduce((s, k) => s + (al[k].open || 0), 0) : null;
+  renderImpact(json.impact);
   document.getElementById("s-alerts").textContent = !al || !opened.length ? "未开启" : total ? total + " 条" : "无";
   document.getElementById("s-alerts-sub").textContent = !al || !opened.length ? "无数据" : total ? "待处理" : "已开启";
   const t = json.totals || {};
