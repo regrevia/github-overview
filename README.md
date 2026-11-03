@@ -18,6 +18,7 @@ npx github-overview start      # http://127.0.0.1:4317
 - `--npm` 按同一个顺序对应仓库，只在包名和仓库名不一样时才写。默认拿仓库名去找包，找到了还要核对 registry 上的维护者是不是你，不是就不算下载。
 - 首次同步把 14 天内的流量存到本地，之后每 6 小时自动刷新（`--refresh` 可改），页面上的「刷新」随时手动同步。
 - AI 摘要：`npx github-overview config --apikey KEY --baseurl URL --model MODEL`，或点页面右下角「配置」直接填，只存本机 `~/.config/github-overview/config.json`。模型不写用 `deepseek-chat`。
+- 切到「全部仓库」会多出一块「项目」：按访客或窗口内下载把仓库排成一列，点一行就切到那个仓。
 - 没配 AI 也能用，摘要走内置模板；配好后还能在摘要框下面问一句，按当前范围的数据回答。
 
 ## 为什么需要它
