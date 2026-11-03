@@ -211,9 +211,12 @@
     .kpi:last-child { grid-column: 1 / -1; border-left: none; padding-left: 0; }
     .split { grid-template-columns: 1fr; gap: 20px; }
     .donut { flex-direction: row; align-items: center; gap: 16px; }
-    .donut svg { margin: 0; flex: none; }
-    .donut-legend { flex: 1; min-width: 0; }
-    .donut-legend span { overflow: hidden; text-overflow: ellipsis; }
+    .donut { width: 100%; max-width: 100%; overflow: hidden; }
+    .donut svg { margin: 0; flex: none; width: 84px; height: 84px; }
+    .donut-legend { flex: 1; min-width: 0; overflow: hidden; }
+    .donut-legend div { min-width: 0; }
+    .donut-legend span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .donut-legend b { flex: none; }
     .stats { grid-template-columns: 1fr 1fr; gap: 14px; }
     .stats b { font-size: 18px; }
     thead th:nth-child(3), tbody td:nth-child(3) { display: none; }
