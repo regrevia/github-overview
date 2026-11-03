@@ -325,6 +325,17 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
             },
             { name: "list_repos", description: "列出看板绑定的所有仓库", parameters: { type: "object", properties: {} }, run: () => targets.map((t) => t.key) },
             {
+              name: "activity",
+              description: "查外部 issue 和 PR 的明细：编号、标题、作者、状态、是否合并、时间、链接",
+              parameters: { type: "object", properties: { repo: { type: "string", description: "owner/name，不填就是当前面板范围" } } },
+              run: ({ repo }) => {
+                const k2 = repo && targets.some((t) => t.key === repo) ? repo : key;
+                const d = build(windowDays, k2).contributions;
+                const pick = (x, kind) => ({ kind, n: x.number, title: x.title, by: x.author, state: x.merged ? "merged" : x.state, at: x.mergedAt || x.closedAt || x.createdAt, url: x.url });
+                return [...d.pulls.slice(0, 5).map((x) => pick(x, "PR")), ...d.issues.slice(0, 5).map((x) => pick(x, "issue"))];
+              },
+            },
+            {
               name: "sync",
               description: "实时拉一次某个仓库的最新流量，几秒",
               parameters: { type: "object", properties: { repo: { type: "string", description: "owner/name" } }, required: ["repo"] },

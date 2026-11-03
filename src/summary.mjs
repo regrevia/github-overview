@@ -28,12 +28,22 @@ export function saveAiConfig({ apikey, baseurl, model }) {
   return writeConfig({ ...cfg, apikey: apikey ?? cfg.apikey ?? "", baseurl: baseurl ?? cfg.baseurl ?? "", model: model || cfg.model || DEFAULT_MODEL });
 }
 
+const mmdd = (t) => (t ? String(t).slice(5, 10) : "");
+const detailLines = (external) => {
+  const rows = [
+    ...(external.pulls || []).slice(0, 4).map((p) => `PR #${p.number} ${p.author} ${p.merged ? "已合并" : p.state} ${mmdd(p.mergedAt || p.closedAt || p.createdAt)}`),
+    ...(external.issues || []).slice(0, 4).map((i) => `issue #${i.number} ${i.author} ${i.state} ${mmdd(i.closedAt || i.createdAt)}`),
+  ];
+  return rows.length ? [`外部明细：${rows.join("；")}`] : [];
+};
+
 const factLines = (ctx) =>
   [
     `范围：${ctx.scope || "本仓库"}，近 ${ctx.days} 天${ctx.covered && ctx.covered < ctx.days ? `（数据覆盖 ${ctx.covered} 天）` : ""}`,
     `访客（去重真人）：${ctx.uniques ?? "未知"} 人，浏览 ${ctx.views ?? "未知"} 次`,
     ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
     `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
+    ...detailLines(ctx.external),
     `stars ${ctx.stars}，npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
     `最热页面：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
   ].join("\n");
@@ -50,6 +60,7 @@ export async function askQuestion(ctx, question, tools = []) {
       content:
         "你在回答一个 GitHub 仓库数据看板上的提问。下面先给了当前口径的数字；缺的先用工具查，查不到再说没记录。" +
         "可以估算，开头用「约」「大概」并说依据。1 到 2 句，合计不超过 70 个汉字。" +
+        "明细只列了前几条，问具体某条或要链接就用 activity 工具。" +
         "访客数是去重真人，问多少人直接用它。不谈流量为什么变，不提机器人、CI、镜像。直接输出答案。",
     },
     { role: "user", content: `${factLines(ctx)}\n\n问题：${question}` },
