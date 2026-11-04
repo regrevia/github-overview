@@ -474,7 +474,7 @@ function flowChart(node, days) {
   if (firstIdx > 0) {
     svg.appendChild(el("rect", { x: P.l, y: P.t, width: x(firstIdx) - P.l, height: ih, fill: c.zero }));
     svg.appendChild(el("line", { x1: x(firstIdx), x2: x(firstIdx), y1: P.t, y2: P.t + ih, stroke: c.grid, "stroke-dasharray": "3 4" }));
-    svg.appendChild(el("text", { x: x(firstIdx) + 7, y: P.t + 13, class: "tick-label" }, "10-26 起"));
+    svg.appendChild(el("text", { x: x(firstIdx) + 7, y: P.t + 13, class: "tick-label" }, `${dom[firstIdx]?.label ?? ""} 起有数据`));
   }
 
   dom.forEach((d, i) => {
@@ -483,7 +483,7 @@ function flowChart(node, days) {
     }
   });
 
-  const vp = dom.map((d, i) => (d.rec ? { i, pt: `${x(i)},${yl(d.rec.v)}` } : null)).filter(Boolean);
+  const vp = dom.map((d, i) => (d.rec ? { i, pt: `${x(i)},${yl(d.rec.v)}`, v: d.rec.v } : null)).filter(Boolean);
   // 末尾连续 0 = 当天还没采集到：实线停在最后有数的一天，后面用虚线
   const recs = dom.filter((d) => d.rec);
   const avgV = recs.length ? recs.reduce((a, d) => a + (d.rec.v || 0), 0) / recs.length : 0;
@@ -496,7 +496,7 @@ function flowChart(node, days) {
     const bw2 = Math.min(26, iw * 0.16), cv = dom[0].rec.c || 0;
     svg.appendChild(el("rect", { x: x(0) + Math.min(46, iw * 0.3) / 2 + 6, y: yr(cv), width: bw2, height: yr(0) - yr(cv), fill: c.machine, opacity: .3, rx: 3 }));
   } else {
-    const cp = dom.map((d, i) => d.rec ? `${x(i)},${yr(d.rec.c)}` : null).filter(Boolean).join(" ");
+    const cp = dom.slice(0, cut).map((d, i) => d.rec ? `${x(i)},${yr(d.rec.c)}` : null).filter(Boolean).join(" ");
     svg.appendChild(el("polyline", { points: cp, fill: "none", stroke: c.machine, "stroke-width": 1.5, opacity: .9 }));
   }
 
@@ -513,8 +513,12 @@ function flowChart(node, days) {
     svg.appendChild(el("circle", { cx: x(0), cy: yl(v), r: 3.4, fill: c.human }));
   }
   if (tail.length) {
-    svg.appendChild(el("polyline", { points: [lastSolid.pt, ...tail.map((p) => p.pt)].join(" "), fill: "none", stroke: c.human, "stroke-width": 1.5, "stroke-dasharray": "3 4", opacity: .55 }));
-    svg.appendChild(el("text", { x: W - P.r - 4, y: yl(0) - 8, "text-anchor": "end", class: "tick-label", fill: c.human, opacity: .75 }, "未采集"));
+    // 末尾没采集到的 0 不连成斜线，否则看起来像浏览真的掉到 0
+    const tpts = [lastSolid.pt, ...tail.map((p) => p.pt)];
+    if ((tail[tail.length - 1].v || 0) === 0) tpts.pop();
+    if (tpts.length > 1) svg.appendChild(el("polyline", { points: tpts.join(" "), fill: "none", stroke: c.human, "stroke-width": 1.5, "stroke-dasharray": "3 4", opacity: .55 }));
+    const cutLabel = dom[cut]?.label ?? "";
+    svg.appendChild(el("text", { x: W - P.r - 6, y: P.t + 14, "text-anchor": "end", class: "tick-label", fill: c.human, opacity: .75 }, cutLabel ? `${cutLabel} 未采集` : "未采集"));
   }
 
   const peak = DATA.reduce((a, b) => b.v > a.v ? b : a);
@@ -548,6 +552,13 @@ function npmChart(node, days) {
     const yy = y(S.step * t);
     svg.appendChild(el("line", { x1: P.l, x2: W - P.r, y1: yy, y2: yy, stroke: c.grid }));
     svg.appendChild(el("text", { x: P.l - 8, y: yy + 4, "text-anchor": "end", class: "tick-label" }, fmt(S.step * t)));
+  }
+  // npm 下载比浏览晚几天才有数，开头空白要说明是哪天开始有数
+  const firstN = dom.findIndex((d) => d.rec && d.rec.n > 0);
+  if (firstN > 0) {
+    svg.appendChild(el("rect", { x: P.l, y: P.t, width: cx(firstN) - bw / 2 - P.l, height: ih, fill: c.zero }));
+    svg.appendChild(el("line", { x1: cx(firstN) - bw / 2, x2: cx(firstN) - bw / 2, y1: P.t, y2: P.t + ih, stroke: c.grid, "stroke-dasharray": "3 4" }));
+    svg.appendChild(el("text", { x: P.l + 6, y: P.t + 12, class: "tick-label" }, `${dom[firstN].label} 起有数据`));
   }
   dom.forEach((d, i) => {
     if (!d.rec) return;
