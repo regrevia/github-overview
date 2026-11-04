@@ -55,6 +55,25 @@ const factLines = (ctx) =>
     `最热页面：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
   ].join("\n");
 
+// AI 摘要只允许引用给定事实里的数字：对不上就退回模板，免得出现「个仓库」「约 1.2 万」这种错数
+const near = (d, a) => typeof a === "number" && Math.abs(d - a) / Math.max(Math.abs(a), 1) < 0.08;
+function aiLinesTrusted(lines, ctx) {
+  const allowed = [
+    ctx.uniques, ctx.views, ctx.days, ctx.covered, Math.min(ctx.covered || 14, 14),
+    ctx.stars, ctx.npmWeek, ctx.funnel?.views, ctx.funnel?.home, ctx.funnel?.npm,
+    ctx.external?.issues?.length, ctx.external?.pulls?.length,
+  ].filter((v) => typeof v === "number");
+  for (const line of lines) {
+    if (/^[^\d]{0,4}个仓库/.test(line.trim())) return false;
+    for (const m of line.matchAll(/(\d+(?:\.\d+)?)\s*(万|人|次|条|个)?/g)) {
+      const v = Number(m[1]) * (m[2] === "万" ? 10000 : 1);
+      if (v < 200) continue;
+      if (!allowed.some((a) => near(v, a))) return false;
+    }
+  }
+  return true;
+}
+
 const ENDPOINT = (baseurl) => baseurl.replace(/\/$/, "") + "/chat/completions";
 
 export async function askQuestion(ctx, question, tools = []) {
@@ -163,7 +182,10 @@ export async function aiSummary(ctx) {
       });
     }
     if (!text) throw new Error("empty");
+    // 四位以上整数补千分位，跟界面上的数字写法一致
+    text = text.replace(/\b\d{4,}\b/g, (m) => Number(m).toLocaleString("en-US"));
     const lines = text.split(/\n+/).map((s) => s.replace(/^[-*\d.、\s]+/, "").trim()).filter(Boolean).slice(0, 3);
+    if (!lines.length || !aiLinesTrusted(lines, ctx)) return { source: "template", lines: templateSummary(ctx), error: "checked" };
     return { source: "ai", lines, model };
   } catch (e) {
     return { source: "template", lines: templateSummary(ctx), error: String(e.message || e) };
