@@ -10,7 +10,7 @@ export function templateSummary(ctx) {
   if (views == null && uniques == null) lines.push(`还没有访问记录。`);
   else if (days === 1 && day) lines.push(`${String(day).slice(5)} 浏览 ${n(views ?? 0)}、访客 ${n(uniques ?? 0)}。`);
   else if (!uniques && !views) lines.push(`这段时间还没有访客。`);
-  else { const span = Math.min(days, covered || days); lines.push(`${span} 天 ${n(views)} 次浏览${uniques ? `、访客 ${n(uniques)}${span > 14 ? "（14 天去重）" : ""}` : ""}。`); }
+  else { const span = Math.min(days, covered || days); const ud = Math.min(covered || 14, 14); lines.push(`${span} 天 ${n(views)} 次浏览${uniques ? `、访客 ${n(uniques)}（${ud} 天去重）` : ""}。`); }
   const ic = external.issues.length, pc = external.pulls.length;
   lines.push(ic || pc ? `外部提了 ${ic} 个 issue、${pc} 个 PR。` : `这段时间没有外部 issue 或 PR。`);
   if (stars) lines.push(`Star 共 ${stars}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
@@ -42,7 +42,9 @@ const detailLines = (external) => {
 const factLines = (ctx) =>
   [
     `范围：${ctx.scope || "本仓库"}。issue/PR/发版按近 ${ctx.days} 天`,
-    `访客/浏览按近 ${Math.min(ctx.covered || 14, 14)} 天（GitHub 只给这个长度）：去重 ${ctx.uniques ?? "未知"} 人、浏览 ${ctx.views ?? "未知"} 次`,
+    `访客是近 ${Math.min(ctx.covered || 14, 14)} 天的去重人数（GitHub 只给这个长度）：${ctx.uniques ?? "未知"} 人`,
+    `所选 ${ctx.days} 天范围内浏览 ${ctx.views ?? "未知"} 次；浏览比访客多，因为同一个人可以看多次`,
+    `这两段的时间长度不同，写的时候分开说，不要合并成同一个「近 N 天」`,
     ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
     `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
     ...detailLines(ctx.external),
