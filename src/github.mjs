@@ -56,41 +56,90 @@ export function makeGithub(token, { owner, name }) {
     async paths() { return gh(`${repoPath}/traffic/popular/paths`); },
     async releases() { return gh(`${repoPath}/releases?per_page=100`); },
     // external-only: everything not authored by the repo owner (or self aliases)
-    async activity(sinceIso, selfLogins = []) {
+    // 用 REST 列表而不是 search：search 有索引延迟，刚合并/关闭的状态要十几分钟才可见
+    // 真的没处理的活：open 且没人回过的 issue、还没合的 PR。
+  // 不能从 activity 窗口里筛——窗口外的老 issue 会让概览谎报「都已回复」
+  async openWork(selfLogins = []) {
+    const self = new Set([owner.toLowerCase(), ...selfLogins.map((x) => String(x).toLowerCase())]);
+    const [issueRows, pullRows] = await Promise.all([
+      gh(`${repoPath}/issues?state=open&per_page=100`).catch(() => null),
+      gh(`${repoPath}/pulls?state=open&per_page=100`).catch(() => null),
+    ]);
+    const out = { issues: [], pulls: [], at: new Date().toISOString() };
+    const norm = (it, comments) => {
+      const author = it.user?.login || "ghost";
+      if (it.user?.type === "Bot" || author.endsWith("[bot]")) return null;
+      if (self.has(author.toLowerCase())) return null;
+      return {
+        number: it.number,
+        title: it.title || "",
+        author,
+        comments: comments ?? 0,
+        createdAt: it.created_at,
+        updatedAt: it.updated_at,
+        url: it.html_url,
+      };
+    };
+    for (const it of issueRows || []) {
+      if (it.pull_request || (it.comments || 0) > 0) continue;
+      const row = norm(it, it.comments);
+      if (row) out.issues.push(row);
+    }
+    for (const pr of pullRows || []) {
+      const row = norm(pr, pr.comments);
+      if (row) out.pulls.push(row);
+    }
+    const byNew = (a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt));
+    out.issues.sort(byNew);
+    out.pulls.sort(byNew);
+    return out;
+  },
+
+  async activity(sinceIso, selfLogins = []) {
       const self = new Set([owner.toLowerCase(), ...selfLogins.map(s => String(s).toLowerCase())]);
       const out = { issues: [], pulls: [], selfCount: 0 };
-      for (let page = 1; page <= 5; page++) {
-        const rows = await gh(
-          `/search/issues?q=${encodeURIComponent(`repo:${owner}/${name} created:>=${sinceIso}`)}&per_page=100&page=${page}`
-        );
-        const items = rows.items || [];
-        for (const it of items) {
-          const kind = it.pull_request ? "pulls" : "issues";
-          const author = it.user?.login || "ghost";
-          // 机器人（dependabot[bot]、github-actions[bot]、CI app）不算外部反馈
-          if (it.user?.type === "Bot" || author.endsWith("[bot]")) { out.botCount = (out.botCount || 0) + 1; continue; }
-          if (self.has(author.toLowerCase())) { out.selfCount++; continue; }
-          out[kind].push({
-            number: it.number,
-            title: it.title,
-            author,
-            state: it.state,
-            createdAt: it.created_at,
-            closedAt: it.closed_at,
-            merged: Boolean(it.pull_request?.merged_at),
-            mergedAt: it.pull_request?.merged_at || null,
-            comments: it.comments,
-            url: it.html_url,
-          });
-        }
-        if (items.length < 100) break;
+      const byAuthor = (it) => {
+        const author = it.user?.login || "ghost";
+        if (it.user?.type === "Bot" || author.endsWith("[bot]")) { out.botCount = (out.botCount || 0) + 1; return null; }
+        if (self.has(author.toLowerCase())) { out.selfCount++; return null; }
+        return author;
+      };
+      const [issueRows, pullRows] = await Promise.all([
+        gh(`${repoPath}/issues?state=all&since=${sinceIso}&per_page=100&sort=updated&direction=desc`).catch(() => []),
+        gh(`${repoPath}/pulls?state=all&sort=updated&direction=desc&per_page=100`).catch(() => []),
+      ]);
+      for (const it of issueRows || []) {
+        if (it.pull_request) continue;
+        const author = byAuthor(it);
+        if (!author) continue;
+        out.issues.push({
+          number: it.number,
+          title: it.title,
+          author,
+          state: it.state,
+          createdAt: it.created_at,
+          closedAt: it.closed_at,
+          comments: it.comments,
+          url: it.html_url,
+        });
       }
-      for (const pr of out.pulls) {
-        try {
-          const detail = await gh(`${repoPath}/pulls/${pr.number}`);
-          pr.additions = detail.additions;
-          pr.deletions = detail.deletions;
-        } catch { /* older PRs can 404 on details; keep the row */ }
+      for (const pr of pullRows || []) {
+        const updated = String(pr.updated_at || pr.created_at || "").slice(0, 10);
+        if (sinceIso && updated && updated < sinceIso) continue;
+        const author = byAuthor(pr);
+        if (!author) continue;
+        out.pulls.push({
+          number: pr.number,
+          title: pr.title,
+          author,
+          state: pr.state,
+          createdAt: pr.created_at,
+          closedAt: pr.closed_at,
+          merged: Boolean(pr.merged_at),
+          mergedAt: pr.merged_at || null,
+          comments: pr.comments,
+          url: pr.html_url,
+        });
       }
       return out;
     },

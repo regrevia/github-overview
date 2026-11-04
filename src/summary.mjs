@@ -39,8 +39,8 @@ const detailLines = (external) => {
 
 const factLines = (ctx) =>
   [
-    `范围：${ctx.scope || "本仓库"}，近 ${ctx.days} 天${ctx.covered && ctx.covered < ctx.days ? `（数据覆盖 ${ctx.covered} 天）` : ""}`,
-    `访客（去重真人）：${ctx.uniques ?? "未知"} 人，浏览 ${ctx.views ?? "未知"} 次`,
+    `范围：${ctx.scope || "本仓库"}。issue/PR/发版按近 ${ctx.days} 天`,
+    `访客/浏览按近 ${Math.min(ctx.covered || 14, 14)} 天（GitHub 只给这个长度）：去重 ${ctx.uniques ?? "未知"} 人、浏览 ${ctx.views ?? "未知"} 次`,
     ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
     `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
     ...detailLines(ctx.external),
@@ -123,7 +123,7 @@ export async function aiSummary(ctx) {
   const body = {
     model,
     temperature: 0.3,
-    max_tokens: 180,
+    max_tokens: 320,
     messages: [
       {
         role: "system",
@@ -152,8 +152,8 @@ export async function aiSummary(ctx) {
     if (!text) {
       text = await send({
         ...body,
-        max_tokens: 400,
-        messages: [...body.messages, { role: "user", content: "用两句话总结上面这些数字。" }],
+        max_tokens: 600,
+        messages: [...body.messages, { role: "user", content: "用两句话总结上面这些数字，直接给正文。" }],
       });
     }
     if (!text) throw new Error("empty");

@@ -124,7 +124,7 @@
   .ranks .track i { display: block; height: 100%; background: var(--brand); border-radius: 2px; }
   .ranks .v { text-align: right; font-variant-numeric: tabular-nums; }
   .stats em a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-  .cmp ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+  .cmp ul { list-style: none; margin: 0; padding: 0 6px 0 0; display: grid; gap: 7px; }
   .cmp li { display: grid; grid-template-columns: 172px 148px 1fr 60px; gap: 12px; align-items: baseline; font-size: 16px; cursor: pointer; }
   .cmp li:hover .k { color: var(--label-primary); }
   .cmp .k { color: var(--label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -178,6 +178,8 @@
   .cfg { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-l1); }
   .cfg.open { display: block; }
   .ask-out { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: var(--label-secondary); }
+  .ask-out a { color: var(--brand); text-decoration: none; }
+  .ask-out a:hover { text-decoration: underline; }
   .foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--label-secondary); margin-top: 12px; }
   .link { color: var(--label-secondary); border: 0; height: auto; padding: 0; background: none; text-decoration: underline; text-underline-offset: 2px; }
   .link:hover { color: var(--label-primary); background: none; }
@@ -328,7 +330,7 @@
       </section>
 
       <section class="sec" id="sec-cmp" hidden>
-        <div class="head"><h2>发版对比</h2></div>
+        <div class="head"><h2>发版前后 · 浏览/天</h2></div>
         <div class="cmp"><ul id="cmp-list"></ul></div>
       </section>
 
@@ -409,7 +411,7 @@ let DATA = [
 ];
 let RELEASE = { "10-29": 1, "10-30": 1, "10-31": 1, "11-01": 1 };
 const NS = "http://www.w3.org/2000/svg";
-const fmt = v => new Intl.NumberFormat("en").format(Math.round(v));
+const fmt = v => (v > 0 && v < 10 ? Math.round(v * 10) / 10 : Math.round(v)).toLocaleString("en");
 
 const theme = () => document.documentElement.dataset.theme;
 function C() {
@@ -692,7 +694,7 @@ function render(days) {
   kUniq.textContent = uniq == null ? "—" : fmt(uniq);
   const covered = LIVE.range && LIVE.range.covered;
   const covN = covered || recs.length;
-  kViewsSub.textContent = fmt(tv) + " 次浏览" + (covN !== days ? ` · 访客按 ${covN} 天` : "");
+  kViewsSub.textContent = fmt(tv) + " 次浏览" + (covN !== days ? ` · 访客 ${Math.min(covN, 14)} 天` : "");
   rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
   flowChart(document.getElementById("c-flow"), days);
   npmChart(document.getElementById("c-npm"), days);
@@ -758,13 +760,25 @@ document.getElementById("cfg-save").addEventListener("click", async () => {
 const rb = document.getElementById("refresh");
 rb.addEventListener("click", async () => {
   const keep = rb.innerHTML;
-  rb.textContent = "刷新中…";
+  rb.disabled = true;
+  rb.textContent = "同步中…";
+  // 31 个仓库要几十秒，显示到第几个，不然只能盯着一个不动的按钮
+  const tick = setInterval(async () => {
+    try {
+      const r = await fetch("/api/progress");
+      const st = await r.json();
+      if (st.total) rb.textContent = `同步 ${st.done}/${st.total}`;
+    } catch { /* 下一次还会再问 */ }
+  }, 700);
   try {
     await fetch("/api/sync", { method: "POST" });
     await pull(currentRange, true);
     rb.textContent = "刚更新";
   } catch (e) {
     rb.textContent = "刷新失败";
+  } finally {
+    clearInterval(tick);
+    rb.disabled = false;
   }
   setTimeout(() => { rb.innerHTML = keep; }, 1600);
 });
@@ -785,7 +799,7 @@ function renderImpact(it) {
     return;
   }
   sec.hidden = false;
-  const pct = (v) => (v === null || v === undefined ? "" : (v > 0 ? "+" : "") + v + "%");
+  const pct = (v) => pctText(v);
   const show = (k, id, sub) => {
     const b = it.before?.[k]?.avg;
     const a = it.after?.[k]?.avg;
@@ -857,10 +871,13 @@ document.getElementById("ov-sort").addEventListener("click", (e) => {
   drawOverview();
 });
 
+// 统一成倍数：+795% 和 ×38 混排没法一眼比大小
 function pctText(d) {
   if (d === null || d === undefined) return "";
-  if (d >= 1000) return "×" + Math.round(d / 100);
-  return (d > 0 ? "+" : "") + d + "%";
+  const r = 1 + d / 100;
+  if (r >= 10) return "×" + Math.round(r);
+  if (r >= 0.1) return "×" + r.toFixed(1);
+  return "×0";
 }
 
 function renderImpacts(list) {
@@ -952,14 +969,12 @@ function applyLive(json) {
   document.getElementById("k-rel-sub").textContent = rels.length
     ? (repo.fullName === "全部仓库" ? "最近 " + label(rels[0].at) : rels[rels.length - 1].tag + " → " + rels[0].tag)
     : "本窗口无发版";
-  const pending = c.issues.filter((x) => x.state === "open" && !x.comments);
+  const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open" && !x.comments);
   document.getElementById("s-issues").textContent = ic + " 个";
   const issub = document.getElementById("s-issues-sub");
   issub.textContent = "";
-  if (!ic) {
-    issub.textContent = "没有外部 issue";
-  } else if (!pending.length) {
-    issub.textContent = "都已关闭或已回";
+  if (!pending.length) {
+    issub.textContent = ic ? "都已回复" : "没有外部 issue";
   } else {
     const one = pending[0];
     const a = document.createElement("a");
@@ -969,24 +984,41 @@ function applyLive(json) {
     a.textContent = `${one.repo ? one.repo.split("/")[1] : ""} #${one.number}`.trim();
     issub.textContent = `${pending.length} 个没回：`;
     issub.appendChild(a);
+    if (pending.length > 1) issub.title = pending.slice(1, 6).map((x) => `${(x.repo || "").split("/")[1] || ""} #${x.number}`).join("\n");
   }
   document.getElementById("s-prs").textContent = pc + " 个";
   const prSub = document.getElementById("s-prs-sub");
   const prMerged = c.pulls.filter((x) => x.merged).length;
-  const prOpen = c.pulls.find((x) => !x.merged);
+  const openPrs = c.open ? c.open.pulls : c.pulls.filter((x) => !x.merged);
   prSub.textContent = "";
-  if (!pc) {
-    prSub.textContent = "没有外部 PR";
-  } else if (!prOpen) {
-    prSub.textContent = "都已合并";
-  } else {
-    prSub.textContent = prMerged ? `已合并 ${prMerged} 个 · 待合 ` : "待合 ";
+  if (openPrs.length) {
+    const one = openPrs[0];
+    prSub.textContent = (prMerged ? `已合并 ${prMerged} 个 · ` : "") + (openPrs.length > 1 ? `待合 ${openPrs.length} 个：` : "待合 ");
+    if (openPrs.length > 1) prSub.title = openPrs.slice(1, 6).map((x) => `${(x.repo || "").split("/")[1] || ""} #${x.number}`).join("\n");
     const a = document.createElement("a");
-    a.href = prOpen.url;
+    a.href = one.url;
     a.target = "_blank";
     a.rel = "noreferrer";
-    a.textContent = `${prOpen.repo ? prOpen.repo.split("/")[1] : ""} #${prOpen.number}`.trim();
+    a.textContent = `${one.repo ? one.repo.split("/")[1] : ""} #${one.number}`.trim();
     prSub.appendChild(a);
+  } else if (!pc) {
+    prSub.textContent = "没有外部 PR";
+  } else {
+    // 关掉但没合并的 PR 不是「已合并」，别把放弃的说成完成。
+    const drop = c.pulls.filter((x) => !x.merged && x.state === "closed");
+    if (!drop.length) {
+      prSub.textContent = "都已合并";
+    } else {
+      prSub.textContent = (prMerged ? `已合并 ${prMerged} · ` : "") + `${drop.length} 个关了没合：`;
+      const a = document.createElement("a");
+      a.href = drop[0].url;
+      a.target = "_blank";
+      a.rel = "noreferrer";
+      a.textContent = `#${drop[0].number}`;
+      a.title = `${drop[0].repo || ""} #${drop[0].number}`;
+      prSub.appendChild(a);
+      if (drop.length > 1) prSub.title = drop.slice(1, 6).map((x) => `${(x.repo || "").split("/")[1] || ""} #${x.number}`).join("\n");
+    }
   }
   const al = c.alerts;
   const opened = al ? ["dependabot", "codeScanning", "secretScanning"].filter(k => al[k]?.available) : [];
@@ -1176,7 +1208,17 @@ document.querySelector(".ask button").addEventListener("click", async () => {
   try {
     const r = await postJson("/api/ask", { question: q, repo: currentRepo, days: currentRange });
     const d = await r.json();
-    out.textContent = d.answer || "没答上来。";
+    out.replaceChildren();
+    out.appendChild(document.createTextNode(d.answer || "没答上来。"));
+    for (const l of d.links || []) {
+      out.appendChild(document.createElement("br"));
+      const a = document.createElement("a");
+      a.href = l.url;
+      a.target = "_blank";
+      a.rel = "noreferrer";
+      a.textContent = l.label;
+      out.appendChild(a);
+    }
     if (d.source === "ai") input.value = "";
   } catch {
     out.textContent = "连不上本地服务。";

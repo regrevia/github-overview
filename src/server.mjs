@@ -28,10 +28,11 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
   });
   let store = loadStore();
   let lastSync = null;
+  let syncProgress = { running: false, done: 0, total: 0 };
 
   async function syncOne(t) {
     const s = repoStore(store, t.key);
-    const [views, clones, paths, referrers, repoInfo, releases, activity, alerts] = await Promise.all([
+    const [views, clones, paths, referrers, repoInfo, releases, activity, alerts, openWork] = await Promise.all([
       t.gh.views().catch(() => null),
       t.gh.clones().catch(() => null),
       t.gh.paths().catch(() => null),
@@ -40,6 +41,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       t.gh.releases().catch(() => null),
       t.gh.activity(new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10), self).catch(() => null),
       t.gh.alerts().catch(() => null),
+      t.gh.openWork(self).catch(() => null),
     ]);
     if (views || clones) mergeTraffic(s, views, clones);
     // 仓库名当包名只是默认猜测：先看 registry 的维护者，同名别人的包不算自己的下载
@@ -71,12 +73,17 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     }
     if (referrers) s.meta.referrers = referrers.map((r) => ({ from: r.referrer, n: r.count, u: r.uniques }));
     if (alerts) s.meta.alerts = alerts;
-    s.meta.npmVers = npmOk ? await t.npm.perVersion().catch(() => []) : [];
     if (activity) s.meta.activity = activity;
-    const published = npmOk ? await t.npm.versions().catch(() => []) : [];
+    if (openWork) s.meta.openWork = openWork;
+    const [perVers, published] = await Promise.all([
+      npmOk ? t.npm.perVersion().catch(() => null) : null,
+      npmOk ? t.npm.versions().catch(() => null) : null,
+    ]);
+    if (perVers) s.meta.npmVers = perVers;
+    if (!npmOk) s.meta.npmVers = [];
     const merged = new Map((s.releases || []).map((r) => [r.tag, r]));
     for (const r of releases || []) merged.set(r.tag_name, { tag: r.tag_name, at: r.published_at, url: r.html_url });
-    for (const v of published) if (!merged.has(v.version)) merged.set(v.version, { tag: v.version, at: v.at, url: null });
+    for (const v of published || []) if (!merged.has(v.version)) merged.set(v.version, { tag: v.version, at: v.at, url: null });
     s.releases = [...merged.values()]
       .filter((r) => r.at)
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))
@@ -87,16 +94,31 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
   }
 
   async function sync() {
-    const results = [];
-    for (const t of targets) {
-      try {
-        results.push(await syncOne(t));
-      } catch (e) {
-        const s = repoStore(store, t.key);
-        s.meta.error = String(e.message || e);
-        s.meta.syncedAt = new Date().toISOString();
-        results.push({ repo: t.key, ok: false, error: s.meta.error });
+    // 并发跑：31 个仓库串行要四分钟，用户点刷新只能干等
+    const results = new Array(targets.length);
+    const state = { running: true, done: 0, total: targets.length, startedAt: new Date().toISOString() };
+    syncProgress = state;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < targets.length) {
+        const idx = cursor++;
+        const t = targets[idx];
+        try {
+          results[idx] = await syncOne(t);
+        } catch (e) {
+          const s = repoStore(store, t.key);
+          s.meta.error = String(e.message || e);
+          s.meta.syncedAt = new Date().toISOString();
+          results[idx] = { repo: t.key, ok: false, error: s.meta.error };
+        }
+        state.done++;
       }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(6, targets.length) }, worker));
+    } finally {
+      state.running = false;
+      syncProgress = state;
     }
     saveStore(store);
     lastSync = new Date().toISOString();
@@ -228,7 +250,15 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         const ok = all.filter((x) => !x.limited).sort((a, b) => b.at.localeCompare(a.at));
         return ok[0] || all.sort((a, b) => b.at.localeCompare(a.at))[0] || null;
       })(),
-      contributions: { issues: issues.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)), pulls: pulls.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)), alerts: anyAlert ? alerts : null },
+      contributions: {
+        issues: issues.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
+        pulls: pulls.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
+        open: {
+          issues: slices.flatMap(({ t, s }) => (s.meta?.openWork?.issues || []).map((x) => ({ ...x, repo: t.key }))).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
+          pulls: slices.flatMap(({ t, s }) => (s.meta?.openWork?.pulls || []).map((x) => ({ ...x, repo: t.key }))).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
+        },
+        alerts: anyAlert ? alerts : null,
+      },
       updatedAt: lastSync,
     };
   }
@@ -315,6 +345,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       contributions: {
         issues: (meta.activity?.issues || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
         pulls: (meta.activity?.pulls || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
+        open: meta.openWork ? { issues: meta.openWork.issues || [], pulls: meta.openWork.pulls || [] } : null,
         alerts: meta.alerts || null,
       },
       updatedAt: meta.syncedAt || lastSync,
@@ -357,6 +388,9 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         const windowDays = Number(url.searchParams.get("days") || days);
         return send(200, build(windowDays, url.searchParams.get("repo") || ALL));
       }
+      if (url.pathname === "/api/progress") {
+        return send(200, syncProgress);
+      }
       if (url.pathname === "/api/sync" && req.method === "POST") {
         return send(200, await sync());
       }
@@ -387,6 +421,29 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         const key = body.repo || ALL;
         const data = build(windowDays, key);
         const allData = key === ALL ? null : build(windowDays, ALL);
+        // 「有没有没处理的」这类问题不该由模型凭窗口数据猜：窗口外的老 issue 会让它答「都处理了」。
+        // 直接读实时清单，答案和链接都来自数据本身。
+        if (/未处理|没处理|未回|没回|待处理|待办|没人回|没有回/i.test(question)) {
+          const op = data.contributions?.open;
+          if (!op) return send(200, { answer: "还没同步到未处理清单，先刷新一次。", source: "data" });
+          const rows = [
+            ...op.issues.map((x) => ({ ...x, kind: "issue" })),
+            ...op.pulls.map((x) => ({ ...x, kind: "PR" })),
+          ];
+          if (!rows.length) return send(200, { answer: `没有未处理的 issue 或 PR。`, source: "data" });
+          const pick = rows.slice(0, 5);
+          const nI = op.issues.length, nP = op.pulls.length;
+          const head = [nI ? `${nI} 个 issue 没人回` : "", nP ? `${nP} 个 PR 没合` : ""].filter(Boolean).join("，");
+          const links = pick.map((x) => ({
+            label: `${(x.repo || "").split("/")[1] || "本仓"} #${x.number} ${x.kind}`,
+            url: x.url,
+          }));
+          return send(200, {
+            answer: `${head}。${rows.length > pick.length ? `下面是最新 ${pick.length} 个，还有 ${rows.length - pick.length} 个。` : ""}`,
+            links,
+            source: "data",
+          });
+        }
         const topRepos = key === ALL ? null : targets
           .map((t) => ({ name: t.name, u: repoStore(store, t.key).meta?.views?.uniques ?? 0 }))
           .sort((a, b) => b.u - a.u)
