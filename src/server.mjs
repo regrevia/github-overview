@@ -300,11 +300,12 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     const avg = (from, to) => {
       const hit = rows.filter((r) => r.d >= from && r.d <= to);
       const pick = (k) => {
-        const vals = hit.map((r) => r[k]).filter((v) => v !== null && v !== undefined);
-        if (!vals.length) return null;
-        return { avg: Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10, days: vals.length };
+        const got = hit.filter((r) => r[k] !== null && r[k] !== undefined);
+        if (!got.length) return null;
+        const sum = got.reduce((a, r) => a + r[k], 0);
+        return { avg: Math.round((sum / got.length) * 10) / 10, days: got.length, from: got[0].d, to: got.at(-1).d };
       };
-      return { views: pick("v"), uniques: pick("u"), npm: pick("n") };
+      return { from, to, views: pick("v"), uniques: pick("u"), npm: pick("n") };
     };
     const at = (x) => ({ before: avg(shiftDay(x.at, -7), shiftDay(x.at, -1)), after: avg(shiftDay(x.at, 1), shiftDay(x.at, 7)) });
     // 刚发的版本后面还没数据，退到最近一个前后都有 3 天以上的版本

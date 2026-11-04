@@ -327,7 +327,7 @@
         <div class="stats">
           <div><span>浏览日均</span><b id="impact-views">—</b><em id="impact-views-sub"></em></div>
           <div><span>下载日均</span><b id="impact-npm">—</b><em id="impact-npm-sub"></em></div>
-          <div><span>窗口</span><b id="impact-cover">—</b><em></em></div>
+          <div><span>对比区间</span><b id="impact-cover">—</b><em></em></div>
         </div>
       </section>
 
@@ -848,7 +848,9 @@ function renderImpact(it) {
   document.getElementById("impact-ver").textContent = `${it.version} · ${String(it.at).slice(5)}${it.limited ? " · 数据不足" : ""}`;
   show("views", "impact-views", "impact-views-sub");
   show("npm", "impact-npm", "impact-npm-sub");
-  document.getElementById("impact-cover").textContent = `前 ${it.before?.views?.days ?? 0} / 后 ${it.after?.views?.days ?? 0} 天`;
+  const spanTxt = (o) => (o?.from && o?.to ? `${String(o.from).slice(5)}–${String(o.to).slice(5)}` : null);
+  const bSpan = spanTxt(it.before?.views), aSpan = spanTxt(it.after?.views);
+  document.getElementById("impact-cover").textContent = bSpan && aSpan ? `${bSpan} / ${aSpan}` : `前 ${it.before?.views?.days ?? 0} / 后 ${it.after?.views?.days ?? 0} 天`;
 }
 
 let OVERVIEW = [];
