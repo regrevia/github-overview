@@ -7,12 +7,14 @@ import { readConfig, writeConfig, resolveToken, parseRepo, normalizeConfig } fro
 import { makeGithub } from "./github.mjs";
 import { makeNpm } from "./npm.mjs";
 import { loadStore, saveStore, repoStore, mergeTraffic, mergeNpm, series, storedDays } from "./store.mjs";
-import { aiSummary, askQuestion, readAiConfig } from "./summary.mjs";
+import { aiSummary, askQuestion, readAiConfig, templateSummary } from "./summary.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = join(ROOT, "public");
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json" };
 const ALL = "all";
+// 摘要别拖慢页面：先回模板，AI 结果进缓存下一次带出来
+const SUM_CACHE = new Map();
 
 export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
   const cfg = cfgIn || readConfig();
@@ -398,18 +400,31 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         const windowDays = Number(url.searchParams.get("days") || days);
         const key = url.searchParams.get("repo") || ALL;
         const data = build(windowDays, key);
-        const ai = await aiSummary({
+        const winViews = data.series.reduce((a, r) => a + (r.v ?? 0), 0);
+        const single = data.range.days === 1 ? data.series[0] : null;
+        const ctx = {
           days: windowDays,
+          day: single ? single.d : null,
           covered: data.range.covered,
-          uniques: data.totals.uniques,
-          views: data.totals.views,
+          uniques: single ? single.u : data.totals.uniques,
+          views: single ? single.v : winViews,
           external: data.contributions,
           stars: data.repo.stars,
           npmWeek: data.totals.npmWeek,
           paths: data.paths,
           scope: key === ALL ? `你的 ${targets.length} 个仓库` : key,
-        });
-        return send(200, ai);
+        };
+        const ck = `${key}|${windowDays}`;
+        const hit = SUM_CACHE.get(ck);
+        const now = Date.now();
+        if (hit?.val && now - hit.at < 300000) return send(200, hit.val);
+        if (!hit?.busy) {
+          SUM_CACHE.set(ck, { at: hit?.at || 0, val: hit?.val || null, busy: true });
+          aiSummary(ctx)
+            .then((r) => SUM_CACHE.set(ck, { at: Date.now(), val: r, busy: false }))
+            .catch(() => SUM_CACHE.set(ck, { at: hit?.at || 0, val: hit?.val || null, busy: false }));
+        }
+        return send(200, hit?.val || { source: "template", lines: templateSummary(ctx) });
       }
       if (url.pathname === "/api/ask" && req.method === "POST") {
         let raw = "";

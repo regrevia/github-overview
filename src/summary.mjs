@@ -3,15 +3,17 @@ import { readConfig, writeConfig } from "./config.mjs";
 const DEFAULT_MODEL = "deepseek-chat";
 
 export function templateSummary(ctx) {
-  const { uniques, external, stars, npmWeek, days, covered } = ctx;
+  const { uniques, views, external, stars, npmWeek, days, covered, day } = ctx;
   const lines = [];
   // GitHub 只留 14 天，范围比历史长时说明覆盖了几天，不把 14 天的数说成 30 天
-  if (uniques == null) lines.push(`还没有访问记录。`);
-  else if (uniques === 0) lines.push(`这段时间还没有访客。`);
-  else lines.push(`约 ${Number(uniques).toLocaleString("en-US")} 人来看过仓库。`);
+  const n = (x) => Number(x).toLocaleString("en-US");
+  if (views == null && uniques == null) lines.push(`还没有访问记录。`);
+  else if (days === 1 && day) lines.push(`${String(day).slice(5)} 访客 ${n(uniques ?? 0)}、${n(views ?? 0)} 次浏览。`);
+  else if (!uniques && !views) lines.push(`这段时间还没有访客。`);
+  else lines.push(`${days} 天 ${n(views ?? uniques)} 次浏览。`);
   const ic = external.issues.length, pc = external.pulls.length;
   lines.push(ic || pc ? `外部提了 ${ic} 个 issue、${pc} 个 PR。` : `这段时间没有外部 issue 或 PR。`);
-  if (stars) lines.push(`Star 到 ${stars}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
+  if (stars) lines.push(`Star 共 ${stars}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
   return lines;
 }
 
@@ -47,7 +49,7 @@ const factLines = (ctx) =>
     ...(ctx.funnel ? [`漏斗：浏览 ${ctx.funnel.views ?? "—"} → 仓库主页 ${ctx.funnel.home ?? "—"} → npm 下载 ${ctx.funnel.npm ?? "—"}`] : []),
     ...(ctx.impacts?.length ? [`各仓最近发版日均浏览：${ctx.impacts.slice(0, 6).map((i) => `${i.name} ${i.before?.views?.avg ?? "—"}→${i.after?.views?.avg ?? "—"}`).join("、")}`] : []),
     ...(ctx.impact ? [`最近发版 ${ctx.impact.version}（${mmdd(ctx.impact.at)}）：前 7 天日均浏览 ${ctx.impact.before.views?.avg ?? "—"}、下载 ${ctx.impact.before.npm?.avg ?? "—"}，后 7 天 ${ctx.impact.after.views?.avg ?? "—"}、${ctx.impact.after.npm?.avg ?? "—"}`] : []),
-    `stars ${ctx.stars}，npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
+    `stars 合计 ${ctx.stars}（总数，不是新增），npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
     `最热页面：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
   ].join("\n");
 
@@ -80,8 +82,8 @@ export async function askQuestion(ctx, question, tools = []) {
     }
   };
   const call = async (msgs, withTools) => {
-    const body = { model, temperature: 0.2, max_tokens: 420, messages: msgs, ...(withTools && toolDefs.length ? { tools: toolDefs } : {}) };
-    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(25000) });
+    const body = { model, temperature: 0.2, max_tokens: 1400, messages: msgs, ...(withTools && toolDefs.length ? { tools: toolDefs } : {}) };
+    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(28000) });
     if (!res.ok) throw new Error(String(res.status));
     return (await res.json())?.choices?.[0]?.message;
   };
@@ -111,7 +113,8 @@ export async function askQuestion(ctx, question, tools = []) {
     if (!text) return { source: "error", answer: "AI 回了空内容。" };
     return { source: "ai", answer: text.replace(/\s+/g, " ").slice(0, 400) };
   } catch (e) {
-    return { source: "error", answer: `AI 没回应（${e.message}）` };
+    const slow = e?.name === "TimeoutError" || /abort|timeout/i.test(e?.message || "");
+    return { source: "error", answer: slow ? "模型超时，再问一次。" : "模型没答，再问一次。" };
   }
 }
 
@@ -123,7 +126,7 @@ export async function aiSummary(ctx) {
   const body = {
     model,
     temperature: 0.3,
-    max_tokens: 320,
+    max_tokens: 900,
     messages: [
       {
         role: "system",
@@ -142,7 +145,7 @@ export async function aiSummary(ctx) {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(25000),
+      signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
@@ -153,7 +156,7 @@ export async function aiSummary(ctx) {
     if (!text) {
       text = await send({
         ...body,
-        max_tokens: 600,
+        max_tokens: 1200,
         messages: [...body.messages, { role: "user", content: "用两句话总结上面这些数字，直接给正文。" }],
       });
     }

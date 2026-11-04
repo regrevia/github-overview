@@ -75,6 +75,18 @@ export function series(slice, days, npmDaily = {}) {
   const out = [];
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
+  // 1 天窗口看最近一个完整日：GitHub 当天流量要到次日才结算，今天几乎总是 0
+  if (days === 1) {
+    const pick = (back) => {
+      const d = new Date(today);
+      d.setUTCDate(d.getUTCDate() - back);
+      return d.toISOString().slice(0, 10);
+    };
+    let k = pick(1);
+    if (!slice.days[k]) k = pick(2);
+    const row = slice.days[k] || {};
+    return [{ d: k, v: row.v ?? null, u: row.u ?? null, c: row.c ?? null, cu: row.cu ?? null, n: npmDaily[k] ?? slice.npm?.[k] ?? null }];
+  }
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setUTCDate(d.getUTCDate() - i);

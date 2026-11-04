@@ -240,6 +240,7 @@
     </div>
     <div class="spacer"></div>
     <div class="seg" id="seg">
+      <button data-r="1">1 天</button>
       <button data-r="7" class="on">7 天</button>
       <button data-r="30">30 天</button>
       <button data-r="90">90 天</button>
@@ -267,7 +268,7 @@
     <div class="kpi">
       <div class="kpi-label">npm 下载</div>
       <div class="kpi-value" id="k-npm">10,527</div>
-      <div class="kpi-sub">周汇总</div>
+      <div class="kpi-sub" id="k-npm-sub">周汇总</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">stars</div>
@@ -454,7 +455,7 @@ function flowChart(node, days) {
   if (!DATA.some(r => (r.v || 0) > 0 || (r.c || 0) > 0)) return emptyInto(node, "还没有流量数据");
   const L = scale(Math.max(...DATA.map(r => r.v)) * 1.06, ticks);
   const R = scale(Math.max(...DATA.map(r => r.c)) * 1.06, ticks);
-  const x = i => P.l + (i * iw) / (dom.length - 1);
+  const x = i => (dom.length === 1 ? P.l + iw / 2 : P.l + (i * iw) / (dom.length - 1));
   const yl = v => P.t + ih - (v / L.max) * ih;
   const yr = v => P.t + ih - (v / R.max) * ih;
 
@@ -476,7 +477,7 @@ function flowChart(node, days) {
   }
 
   dom.forEach((d, i) => {
-    if (d.rec && RELEASE[d.label]) {
+    if (dom.length > 1 && d.rec && RELEASE[d.label]) {
       svg.appendChild(el("line", { x1: x(i), x2: x(i), y1: P.t - 3, y2: P.t + ih, stroke: c.event, "stroke-width": 1, "stroke-dasharray": "2 4", opacity: .5 }));
     }
   });
@@ -490,8 +491,13 @@ function flowChart(node, days) {
   const solidLen = Math.max(1, vp.filter((p) => p.i < cut).length);
   const solid = vp.slice(0, solidLen), tail = vp.slice(solidLen);
 
-  const cp = dom.map((d, i) => d.rec ? `${x(i)},${yr(d.rec.c)}` : null).filter(Boolean).join(" ");
-  svg.appendChild(el("polyline", { points: cp, fill: "none", stroke: c.machine, "stroke-width": 1.5, opacity: .9 }));
+  if (dom.length === 1 && dom[0].rec) {
+    const bw2 = Math.min(26, iw * 0.16), cv = dom[0].rec.c || 0;
+    svg.appendChild(el("rect", { x: x(0) + Math.min(46, iw * 0.3) / 2 + 6, y: yr(cv), width: bw2, height: yr(0) - yr(cv), fill: c.machine, opacity: .3, rx: 3 }));
+  } else {
+    const cp = dom.map((d, i) => d.rec ? `${x(i)},${yr(d.rec.c)}` : null).filter(Boolean).join(" ");
+    svg.appendChild(el("polyline", { points: cp, fill: "none", stroke: c.machine, "stroke-width": 1.5, opacity: .9 }));
+  }
 
   const lastSolid = solid[solid.length - 1], firstSolid = solid[0];
   svg.appendChild(el("path", {
@@ -499,6 +505,12 @@ function flowChart(node, days) {
     fill: c.human, opacity: .14
   }));
   svg.appendChild(el("polyline", { points: solid.map((p) => p.pt).join(" "), fill: "none", stroke: c.human, "stroke-width": 2, "stroke-linejoin": "round" }));
+  // 单天没有折线可看，改成一个站直的柱子
+  if (dom.length === 1 && dom[0].rec) {
+    const bw = Math.min(46, iw * 0.3), v = dom[0].rec.v || 0;
+    svg.appendChild(el("rect", { x: x(0) - bw / 2, y: yl(v), width: bw, height: yl(0) - yl(v), fill: c.human, opacity: .18, rx: 3 }));
+    svg.appendChild(el("circle", { cx: x(0), cy: yl(v), r: 3.4, fill: c.human }));
+  }
   if (tail.length) {
     svg.appendChild(el("polyline", { points: [lastSolid.pt, ...tail.map((p) => p.pt)].join(" "), fill: "none", stroke: c.human, "stroke-width": 1.5, "stroke-dasharray": "3 4", opacity: .55 }));
     svg.appendChild(el("text", { x: W - P.r - 4, y: yl(0) - 8, "text-anchor": "end", class: "tick-label", fill: c.human, opacity: .75 }, "未采集"));
@@ -564,7 +576,7 @@ let PATHS = null;
 let FIRST = null;
 let LIVE_SET = false;
 // 实时数据：拿不到就继续用内置样例，页面始终能看
-const LIVE = { totals: {}, range: { days: 7, storedDays: 0 }, repo: {}, contributions: { issues: [], pulls: [] }, releases: [], paths: [], npmVersions: [], updatedAt: null };
+const LIVE = { totals: {}, range: { days: 7, storedDays: 0 }, repo: {}, contributions: { issues: [], pulls: [], open: null }, releases: [], paths: [], npmVersions: [], updatedAt: null };
 
 const emptyInto = (node, text) => {
   node.textContent = "";
@@ -676,7 +688,7 @@ const kViewsSub = document.getElementById("k-views-sub");
 
 
 const rangeNote = document.getElementById("range-note");
-let currentRange = [7, 30, 90].includes(Number(new URLSearchParams(location.search).get("days"))) ? Number(new URLSearchParams(location.search).get("days")) : 7;
+let currentRange = [1, 7, 30, 90].includes(Number(new URLSearchParams(location.search).get("days"))) ? Number(new URLSearchParams(location.search).get("days")) : 7;
 
 function render(days) {
   currentRange = days;
@@ -690,11 +702,13 @@ function render(days) {
   // 访客只能用 API 窗口去重值；超过 14 天没有该值就退回日均
   // 7 天取 API 去重值，更长范围按覆盖期逐日合计
   let uniq = LIVE.totals.uniques != null ? LIVE.totals.uniques : null;
+  // 1 天时 totals.uniques 是 14 天窗口去重值，换成当天去重才不误导
+  if (days === 1 && recs.length) uniq = recs[recs.length - 1].u;
   if (uniq == null) uniq = recs.length ? tu : null;
   kUniq.textContent = uniq == null ? "—" : fmt(uniq);
   const covered = LIVE.range && LIVE.range.covered;
   const covN = covered || recs.length;
-  kViewsSub.textContent = fmt(tv) + " 次浏览" + (covN !== days ? ` · 访客 ${Math.min(covN, 14)} 天` : "");
+  kViewsSub.textContent = fmt(tv) + (days === 1 ? " 次浏览 · " + (DATA[DATA.length - 1]?.d || "") : " 次浏览" + (covN !== days ? ` · 访客 ${Math.min(covN, 14)} 天` : ""));
   rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
   flowChart(document.getElementById("c-flow"), days);
   npmChart(document.getElementById("c-npm"), days);
@@ -964,9 +978,11 @@ function applyLive(json) {
   const c = json.contributions || { issues: [], pulls: [] };
   const ic = c.issues.length, pc = c.pulls.length;
   document.getElementById("k-contrib").textContent = ic + pc;
-  document.getElementById("k-contrib-sub").textContent = ic + " issue、" + pc + " PR";
+  document.getElementById("k-contrib-sub").textContent = currentRange === 1
+    ? (ic + pc ? "今天 " + (ic + pc) + " 个" : "今天没有新的")
+    : ic + " issue、" + pc + " PR";
   document.getElementById("k-stars").textContent = repo.stars ?? "—";
-  document.getElementById("k-forks").textContent = (repo.forks ?? 0) + " forks";
+  document.getElementById("k-forks").textContent = (repo.forks ?? 0) + " forks" + (repo.fullName === "全部仓库" && repo.count ? " · " + repo.count + " 个仓" : "");
   const rels = (json.releases || []).filter(r => DATA.some(x => x.d === label(r.at)));
   document.getElementById("k-rel").textContent = rels.length;
   document.getElementById("k-rel-sub").textContent = rels.length
@@ -1007,21 +1023,7 @@ function applyLive(json) {
   } else if (!pc) {
     prSub.textContent = "没有外部 PR";
   } else {
-    // 关掉但没合并的 PR 不是「已合并」，别把放弃的说成完成。
-    const drop = c.pulls.filter((x) => !x.merged && x.state === "closed");
-    if (!drop.length) {
-      prSub.textContent = "都已合并";
-    } else {
-      prSub.textContent = (prMerged ? `已合并 ${prMerged} · ` : "") + `${drop.length} 个关了没合：`;
-      const a = document.createElement("a");
-      a.href = drop[0].url;
-      a.target = "_blank";
-      a.rel = "noreferrer";
-      a.textContent = `#${drop[0].number}`;
-      a.title = `${drop[0].repo || ""} #${drop[0].number}`;
-      prSub.appendChild(a);
-      if (drop.length > 1) prSub.title = drop.slice(1, 6).map((x) => `${(x.repo || "").split("/")[1] || ""} #${x.number}`).join("\n");
-    }
+    prSub.textContent = "都已处理";
   }
   const al = c.alerts;
   const opened = al ? ["dependabot", "codeScanning", "secretScanning"].filter(k => al[k]?.available) : [];
@@ -1073,6 +1075,8 @@ function applyLive(json) {
   }
   const t = json.totals || {};
   document.getElementById("k-npm").textContent = t.npmWeek != null ? fmt(t.npmWeek) : "—";
+  const npmSub = document.getElementById("k-npm-sub");
+  if (npmSub) npmSub.textContent = repo.fullName === "全部仓库" && repo.count ? repo.count + " 个仓 · 周汇总" : "周汇总";
   const days = json.range?.storedDays || 0;
   document.getElementById("r-days").textContent = days + " 天";
   if (json.updatedAt) {
@@ -1161,7 +1165,7 @@ MENU.addEventListener("click", (e) => {
 
 document.addEventListener("click", () => closeMenu());
 
-async function pull(days, force) {
+async function pull(days, force, quiet) {
   try {
     const res = await fetch("/api/data?days=" + days + "&repo=" + encodeURIComponent(currentRepo), { cache: "no-store" });
     if (!res.ok) throw new Error(res.status);
@@ -1170,13 +1174,22 @@ async function pull(days, force) {
     applyLive(json);
     if (!(days === LIVE.range.days)) LIVE.range.days = days;
     render(days);
-    loadSummary(days);
+    if (!quiet) loadSummary(days);
     return json;
   } catch (e) {
     render(days);
     return null;
   }
 }
+
+// 概览别停在旧状态：切回页面立刻拉一次，1 天窗口 60 秒，其它 5 分钟
+let SOFT_T = null;
+async function softRefresh() {
+  clearTimeout(SOFT_T);
+  if (!document.hidden) await pull(currentRange, true, true);
+  SOFT_T = setTimeout(softRefresh, currentRange === 1 ? 60000 : 300000);
+}
+addEventListener("visibilitychange", () => { if (!document.hidden) softRefresh(); });
 
 let SUM_SEQ = 0;
 async function loadSummary(days) {
@@ -1210,7 +1223,7 @@ document.querySelector(".ask button").addEventListener("click", async () => {
   out.textContent = "在查…";
   const slow = setTimeout(() => { if (!out.hidden && /在查/.test(out.textContent)) out.textContent = "还在查…"; }, 8000);
   const ac = new AbortController();
-  const to = setTimeout(() => ac.abort(), 75000);
+  const to = setTimeout(() => ac.abort(), 32000);
   try {
     const r = await postJson("/api/ask", { question: q, repo: currentRepo, days: currentRange }, { signal: ac.signal });
     const d = await r.json();
@@ -1240,6 +1253,7 @@ document.querySelector(".ask button").addEventListener("click", async () => {
 const segInit = document.getElementById("seg");
 [...segInit.children].forEach((b) => b.classList.toggle("on", +b.dataset.r === currentRange));
 loadRepos().then(() => pull(currentRange));
+softRefresh();
 let rzT;
 addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => render(currentRange), 160); });
 </script>
