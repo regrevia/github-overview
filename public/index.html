@@ -667,10 +667,11 @@ function ranks(node) {
   // 只有一两个来源时别把数字推到半屏外
   const thin = RANKS.length === 1 && RANKS[0][1].length <= 2;
   node.style.maxWidth = thin ? "320px" : "";
-  RANKS.forEach(([group, rows]) => {
+  RANKS.forEach(([group, rows, note]) => {
     const box = document.createElement("div");
     const h3 = document.createElement("h3");
     h3.textContent = group + " · 近 14 天";
+    if (note) { const sp = document.createElement("span"); sp.className = "head-note"; sp.textContent = "· " + note; h3.appendChild(sp); }
     box.appendChild(h3);
     const ul = document.createElement("ul");
     const max = Math.max(...rows.map(r => r[1]), 1);
@@ -998,7 +999,8 @@ function applyLive(json) {
     if (rest > 0) PATHS.push(["其他页面", rest, "--border-l2"]);
   }
   if (Array.isArray(json.referrers) && json.referrers.length) {
-    RANKS = [["从哪来", json.referrers.slice(0, 4).map(r => [r.from.replace(/^www\./, ""), r.n])]];
+    const refTotal = json.referrers.reduce((a, r) => a + r.n, 0);
+    RANKS = [["从哪来", json.referrers.slice(0, 4).map(r => [r.from.replace(/^www\./, ""), r.n]), refTotal ? `有来源 ${refTotal.toLocaleString("en-US")} 次` : ""]];
   }
   const repo = json.repo || {};
   const ownerEl = document.getElementById("repo-owner");
