@@ -224,7 +224,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
           return {
             key: t.key,
             name: t.key.split("/")[1] || t.key,
-            uniques: r.meta?.views?.uniques ?? null,
+            uniques: windowDays === 1 ? (w.at(-1)?.u ?? null) : (r.meta?.views?.uniques ?? null),
             views: w.reduce((a, x) => a + (x.v ?? 0), 0),
             npm: w.reduce((a, x) => a + (x.n ?? 0), 0),
             stars: r.meta?.stars ?? null,
@@ -236,19 +236,19 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         home: [...paths.values()].filter((p) => p.p === "仓库主页").reduce((a, p) => a + p.n, 0) || null,
         npm: sumOf((s) => s.meta?.npmWeek),
       },
-      impacts: slices
+      impacts: windowDays < 7 ? [] : slices
         .map(({ t, s }) => {
           const im = impactOf(s);
           return im && im.before?.views?.avg ? { key: t.key, name: t.key.split("/")[1] || t.key, ...im } : null;
         })
-        .filter(Boolean)
+        .filter((x) => x && x.at >= rows[0]?.d)
         .sort((a, b) => (a.limited === b.limited ? b.at.localeCompare(a.at) : a.limited ? 1 : -1)),
       paths: [...paths.values()].sort((a, b) => b.n - a.n),
       referrers: [...referrers.values()].sort((a, b) => b.n - a.n),
       releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30),
       npmVersions,
-      impact: (() => {
-        const all = slices.map(({ s }) => impactOf(s)).filter(Boolean);
+      impact: windowDays < 7 ? null : (() => {
+        const all = slices.map(({ s }) => impactOf(s)).filter((x) => x && x.at >= rows[0]?.d);
         const ok = all.filter((x) => !x.limited).sort((a, b) => b.at.localeCompare(a.at));
         return ok[0] || all.sort((a, b) => b.at.localeCompare(a.at))[0] || null;
       })(),
