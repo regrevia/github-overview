@@ -10,7 +10,7 @@ export function templateSummary(ctx) {
   if (views == null && uniques == null) lines.push(`还没有访问记录。`);
   else if (days === 1 && day) lines.push(`${String(day).slice(5)} 访客 ${n(uniques ?? 0)}、${n(views ?? 0)} 次浏览。`);
   else if (!uniques && !views) lines.push(`这段时间还没有访客。`);
-  else lines.push(`${days} 天 ${n(views ?? uniques)} 次浏览。`);
+  else { const span = Math.min(days, covered || days); lines.push(`${span} 天 ${n(views ?? uniques)} 次浏览。`); }
   const ic = external.issues.length, pc = external.pulls.length;
   lines.push(ic || pc ? `外部提了 ${ic} 个 issue、${pc} 个 PR。` : `这段时间没有外部 issue 或 PR。`);
   if (stars) lines.push(`Star 共 ${stars}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
