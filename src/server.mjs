@@ -359,7 +359,10 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       referrers: meta.referrers || [],
       releases: s.releases || [],
       npmVersions: meta.npmVers || [],
-      impact: impactOf(s),
+      impact: windowDays < 7 ? null : (() => {
+        const im = impactOf(s);
+        return im && im.at >= rows[0]?.d ? im : null;
+      })(),
       contributions: {
         issues: (meta.activity?.issues || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
         pulls: (meta.activity?.pulls || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
