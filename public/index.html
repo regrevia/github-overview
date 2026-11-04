@@ -264,7 +264,7 @@
     <div class="kpi">
       <div class="kpi-label">外部贡献</div>
       <div class="kpi-value" id="k-contrib">2</div>
-      <div class="kpi-sub" id="k-contrib-sub">1 issue、1 PR</div>
+      <div class="kpi-sub" id="k-contrib-sub">—</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">npm 下载</div>
@@ -1017,8 +1017,10 @@ function applyLive(json) {
   const c = json.contributions || { issues: [], pulls: [] };
   const ic = c.issues.length, pc = c.pulls.length;
   document.getElementById("k-contrib").textContent = ic + pc;
+  // 1 天视图报的是最近一个完整日，不是今天
+  const dayLbl = json.range && json.range.to ? label(json.range.to) : "今天";
   document.getElementById("k-contrib-sub").textContent = currentRange === 1
-    ? (ic + pc ? "今天 " + (ic + pc) + " 个" : "今天没有新的")
+    ? (ic + pc ? dayLbl + " " + (ic + pc) + " 个" : dayLbl + " 没有新的")
     : ic + " issue、" + pc + " PR";
   document.getElementById("k-stars").textContent = repo.stars ?? "—";
   document.getElementById("k-forks").textContent = (repo.forks ?? 0) + " forks" + (repo.fullName === "全部仓库" && repo.count ? " · " + repo.count + " 个仓" : "");
