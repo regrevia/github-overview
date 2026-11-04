@@ -58,11 +58,18 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       }
     }
     s.meta.npmOwned = npmOk;
+    let perVers = null, published = null;
     if (npmOk) {
-      const npmRange = await t.npm.range(new Date(Date.now() - 400 * 864e5), new Date());
+      // npm registry 的几个接口互相独立，一起发比排队快一半
+      const [npmRange, week, pv, pub] = await Promise.all([
+        t.npm.range(new Date(Date.now() - 400 * 864e5), new Date()).catch(() => null),
+        t.npm.week().catch(() => null),
+        t.npm.perVersion().catch(() => null),
+        t.npm.versions().catch(() => null),
+      ]);
       if (Array.isArray(npmRange)) mergeNpm(s, npmRange);
-      const week = await t.npm.week().catch(() => null);
       if (Number.isFinite(week)) s.meta.npmWeek = week;
+      perVers = pv; published = pub;
     }
     const prefix = `/${t.owner}/${t.name}`;
     s.meta.repo = repoInfo || s.meta.repo || { owner: t.owner, name: t.name };
@@ -77,10 +84,6 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     if (alerts) s.meta.alerts = alerts;
     if (activity) s.meta.activity = activity;
     if (openWork) s.meta.openWork = openWork;
-    const [perVers, published] = await Promise.all([
-      npmOk ? t.npm.perVersion().catch(() => null) : null,
-      npmOk ? t.npm.versions().catch(() => null) : null,
-    ]);
     if (perVers) s.meta.npmVers = perVers;
     if (!npmOk) s.meta.npmVers = [];
     const merged = new Map((s.releases || []).map((r) => [r.tag, r]));
@@ -95,7 +98,20 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     return { repo: t.key, ok: true };
   }
 
+  let syncPromise = null;
   async function sync() {
+    // 连点刷新别再走一遍全量：正在跑就等同一个，刚跑完 1 分钟内直接返回
+    if (syncPromise) return syncPromise;
+    if (lastSync && Date.now() - Date.parse(lastSync) < 60_000) return { ok: true, cached: true, syncedAt: lastSync };
+    syncPromise = runSync();
+    try {
+      return await syncPromise;
+    } finally {
+      syncPromise = null;
+    }
+  }
+
+  async function runSync() {
     // 并发跑：31 个仓库串行要四分钟，用户点刷新只能干等
     const results = new Array(targets.length);
     const state = { running: true, done: 0, total: targets.length, startedAt: new Date().toISOString() };

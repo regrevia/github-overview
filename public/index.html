@@ -785,9 +785,10 @@ rb.addEventListener("click", async () => {
     } catch { /* 下一次还会再问 */ }
   }, 700);
   try {
-    await fetch("/api/sync", { method: "POST" });
+    const res = await fetch("/api/sync", { method: "POST" });
+    const j = await res.json().catch(() => ({}));
     await pull(currentRange, true);
-    rb.textContent = "刚更新";
+    rb.textContent = j.cached ? "已是最新" : "刚更新";
   } catch (e) {
     rb.textContent = "刷新失败";
   } finally {
