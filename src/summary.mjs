@@ -81,7 +81,7 @@ export async function askQuestion(ctx, question, tools = []) {
   };
   const call = async (msgs, withTools) => {
     const body = { model, temperature: 0.2, max_tokens: 420, messages: msgs, ...(withTools && toolDefs.length ? { tools: toolDefs } : {}) };
-    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` }, body: JSON.stringify(body) });
+    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(25000) });
     if (!res.ok) throw new Error(String(res.status));
     return (await res.json())?.choices?.[0]?.message;
   };
@@ -92,7 +92,7 @@ export async function askQuestion(ctx, question, tools = []) {
     } catch {
       msg = await call(messages, false);
     }
-    for (let i = 0; i < 3 && msg?.tool_calls?.length; i++) {
+    for (let i = 0; i < 2 && msg?.tool_calls?.length; i++) {
       messages.push({ role: "assistant", content: msg.content || "", tool_calls: msg.tool_calls });
       for (const c of msg.tool_calls) {
         let args = {};
@@ -142,6 +142,7 @@ export async function aiSummary(ctx) {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(25000),
     });
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();

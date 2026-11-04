@@ -719,8 +719,8 @@ document.getElementById("theme").addEventListener("click", () => {
   render(currentRange);
 });
 
-const postJson = (path, obj) =>
-  fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(obj) });
+const postJson = (path, obj, opts = {}) =>
+  fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(obj), ...opts });
 const cfgPanel = document.getElementById("cfg");
 async function loadCfg() {
   try {
@@ -881,7 +881,10 @@ function pctText(d) {
 }
 
 function renderImpacts(list) {
-  const rows = (list || []).filter((i) => !i.limited && i.before?.views?.avg != null && i.after?.views?.avg != null);
+  const all = (list || []).filter((i) => !i.limited && i.before?.views?.avg != null && i.after?.views?.avg != null);
+  // 日均不到 5 次浏览的仓，倍数只是噪声（0.3 → 12 也是 ×39），排在最前面反而看不懂
+  const solid = all.filter((i) => (i.before?.views?.avg ?? 0) >= 5);
+  const rows = solid.length ? solid : all;
   document.getElementById("sec-cmp").hidden = !rows.length;
   const node = document.getElementById("cmp-list");
   node.textContent = "";
@@ -1205,8 +1208,11 @@ document.querySelector(".ask button").addEventListener("click", async () => {
   btn.disabled = true;
   out.hidden = false;
   out.textContent = "在查…";
+  const slow = setTimeout(() => { if (!out.hidden && /在查/.test(out.textContent)) out.textContent = "还在查…"; }, 8000);
+  const ac = new AbortController();
+  const to = setTimeout(() => ac.abort(), 75000);
   try {
-    const r = await postJson("/api/ask", { question: q, repo: currentRepo, days: currentRange });
+    const r = await postJson("/api/ask", { question: q, repo: currentRepo, days: currentRange }, { signal: ac.signal });
     const d = await r.json();
     out.replaceChildren();
     out.appendChild(document.createTextNode(d.answer || "没答上来。"));
@@ -1220,11 +1226,14 @@ document.querySelector(".ask button").addEventListener("click", async () => {
       out.appendChild(a);
     }
     if (d.source === "ai") input.value = "";
-  } catch {
-    out.textContent = "连不上本地服务。";
+  } catch (e) {
+    out.textContent = e && e.name === "AbortError" ? "等太久了，再问一次。" : "连不上本地服务。";
+  } finally {
+    clearTimeout(to);
+    clearTimeout(slow);
+    input.disabled = false;
+    btn.disabled = false;
   }
-  input.disabled = false;
-  btn.disabled = false;
 });
 
 
