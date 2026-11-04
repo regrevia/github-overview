@@ -256,9 +256,9 @@
 
   <section class="kpis">
     <div class="kpi">
-      <div class="kpi-label">访客</div>
+      <div class="kpi-label">浏览</div>
       <div class="kpi-value" id="k-uniq">341</div>
-      <div class="kpi-sub" id="k-views-sub">424 次浏览</div>
+      <div class="kpi-sub" id="k-views-sub">访客 424</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">外部贡献</div>
@@ -705,10 +705,15 @@ function render(days) {
   // 1 天时 totals.uniques 是 14 天窗口去重值，换成当天去重才不误导
   if (days === 1 && recs.length) uniq = recs[recs.length - 1].u;
   if (uniq == null) uniq = recs.length ? tu : null;
-  kUniq.textContent = uniq == null ? "—" : fmt(uniq);
+  // 主数用窗口内浏览（逐日可加，跟着范围变）；访客是 GitHub 的 14 天去重值，只能放副标说清口径
   const covered = LIVE.range && LIVE.range.covered;
   const covN = covered || recs.length;
-  kViewsSub.textContent = fmt(tv) + (days === 1 ? " 次浏览 · " + (DATA[DATA.length - 1]?.d || "") : " 次浏览" + (covN !== days ? ` · 访客 ${Math.min(covN, 14)} 天` : ""));
+  kUniq.textContent = recs.length ? fmt(tv) : "—";
+  kViewsSub.textContent = uniq == null
+    ? "访客 —"
+    : days === 1
+      ? `访客 ${fmt(uniq)} · ${DATA[DATA.length - 1]?.d || ""}`
+      : `访客 ${fmt(uniq)} · ${Math.min(covN, 14)} 天`;
   rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
   flowChart(document.getElementById("c-flow"), days);
   npmChart(document.getElementById("c-npm"), days);

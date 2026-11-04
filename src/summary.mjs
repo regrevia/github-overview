@@ -8,9 +8,9 @@ export function templateSummary(ctx) {
   // GitHub 只留 14 天，范围比历史长时说明覆盖了几天，不把 14 天的数说成 30 天
   const n = (x) => Number(x).toLocaleString("en-US");
   if (views == null && uniques == null) lines.push(`还没有访问记录。`);
-  else if (days === 1 && day) lines.push(`${String(day).slice(5)} 访客 ${n(uniques ?? 0)}、${n(views ?? 0)} 次浏览。`);
+  else if (days === 1 && day) lines.push(`${String(day).slice(5)} 浏览 ${n(views ?? 0)}、访客 ${n(uniques ?? 0)}。`);
   else if (!uniques && !views) lines.push(`这段时间还没有访客。`);
-  else { const span = Math.min(days, covered || days); lines.push(`${span} 天 ${n(views ?? uniques)} 次浏览。`); }
+  else { const span = Math.min(days, covered || days); lines.push(`${span} 天 ${n(views)} 次浏览${uniques ? `、访客 ${n(uniques)}${span > 14 ? "（14 天去重）" : ""}` : ""}。`); }
   const ic = external.issues.length, pc = external.pulls.length;
   lines.push(ic || pc ? `外部提了 ${ic} 个 issue、${pc} 个 PR。` : `这段时间没有外部 issue 或 PR。`);
   if (stars) lines.push(`Star 共 ${stars}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
