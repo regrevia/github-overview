@@ -1040,7 +1040,7 @@ function applyLive(json) {
     const refShown = refTop.reduce((a, r) => a + r.n, 0);
     const refRest = refTotal - refShown;
     const refNote = refTotal
-      ? `有来源 ${refTotal.toLocaleString("en-US")} 次${refRest > 0 ? ` · 另有 ${refRest} 次` : ""}`
+      ? `有来源 ${refTotal.toLocaleString("en-US")} 次${refRest > 0 ? ` · 另有 ${refRest} 次来自其他来源` : ""}`
       : "";
     RANKS = [["从哪来", refTop.map(r => [r.from.replace(/^www\./, ""), r.n]), refNote]];
   }
