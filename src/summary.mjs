@@ -26,11 +26,9 @@ export function templateSummary(ctx) {
   const sgTxt = sg && sg.delta != null
     ? (sg.span === 1 ? `${String(sg.to || "").slice(5)} +${sg.delta}` : `近 ${sg.span} 天 +${sg.delta}`)
     : "";
-  if (stars) lines.push(`Star 共 ${stars}${sgTxt ? `（${sgTxt}）` : ""}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
+  if (stars) lines.push(`Star 共 ${stars}${sgTxt ? `（${sgTxt}）` : ""}${npmWeek ? `，npm 周下载 ${n(npmWeek)}` : ""}。`);
   return lines;
 }
-
-const fmt = (n) => (n >= 10000 ? `${(n / 10000).toFixed(2).replace(/0$/, "")} 万` : String(n));
 
 // AI 配置就两样：apikey 和 baseurl，存在本机配置里，不进仓库
 export function readAiConfig() {
@@ -208,6 +206,12 @@ export async function aiSummary(ctx) {
       });
     }
     if (!text) throw new Error("empty");
+    // 一天窗口里「1 天内浏览」「1 天新增」既不自然，也和 KPI 上的日期对不上，换成具体日期
+    if (ctx.days === 1 && ctx.day) {
+      const dd = String(ctx.day).slice(5);
+      text = text.replace(/(?<![\d])1\s*天内?/g, dd);
+      text = text.replace(/近?\s*14\s*天(?=\s*访客)/g, dd);
+    }
     // 四位以上整数补千分位，跟界面上的数字写法一致
     text = text.replace(/\b\d{4,}\b/g, (m) => Number(m).toLocaleString("en-US"));
     // 汉字和数字之间留空格，跟界面上的排版一致
