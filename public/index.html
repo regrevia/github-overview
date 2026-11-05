@@ -377,7 +377,7 @@
         <p id="sum-3" hidden></p>
 
         <div class="ask">
-          <input placeholder="问这个仓库">
+          <input id="ask-q" placeholder="问全部仓库">
           <button class="mini">问</button>
         </div>
         <p class="ask-out" id="ask-out" hidden></p>
@@ -712,6 +712,9 @@ function ranks(node) {
   });
 }
 
+// 有的 tag 写 v 有的不写，同一列里统一省掉前缀，版本号本身不变
+const bareTag = (t) => String(t ?? "").trim().replace(/^[vV](?=\d)/, "");
+
 const kUniq = document.getElementById("k-uniq");
 const kViewsSub = document.getElementById("k-views-sub");
 
@@ -1034,6 +1037,8 @@ function applyLive(json) {
   const repo = json.repo || {};
   const ownerEl = document.getElementById("repo-owner");
   const nameEl = document.getElementById("repo-name");
+  const askQ = document.getElementById("ask-q");
+  if (askQ) askQ.placeholder = repo.fullName === "全部仓库" ? "问全部仓库" : "问这个仓库";
   if (repo.fullName === "全部仓库") {
     ownerEl.textContent = "";
     nameEl.textContent = "全部仓库";
@@ -1061,7 +1066,7 @@ function applyLive(json) {
   const rels = (json.releases || []).filter(r => DATA.some(x => x.d === label(r.at)));
   document.getElementById("k-rel").textContent = rels.length;
   document.getElementById("k-rel-sub").textContent = rels.length
-    ? (repo.fullName === "全部仓库" ? "最近 " + label(rels[0].at) : rels[rels.length - 1].tag + " → " + rels[0].tag)
+    ? (repo.fullName === "全部仓库" ? "最近 " + label(rels[0].at) : bareTag(rels[rels.length - 1].tag) + " → " + bareTag(rels[0].tag))
     : "本窗口无发版";
   const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open" && !x.comments);
   document.getElementById("s-issues").textContent = ic + " 个";
