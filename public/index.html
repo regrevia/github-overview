@@ -431,6 +431,19 @@ function el(tag, attrs, text) {
   if (text != null) n.textContent = text;
   return n;
 }
+// 窄屏放不下就少标几个日期，但末日一定标上，也别和前一个挤成一条
+function axisIdx(n, iw) {
+  const fit = Math.max(3, Math.floor(iw / 64));
+  const step = Math.max(1, Math.ceil(n / fit));
+  const out = [];
+  for (let i = 0; i < n; i += step) out.push(i);
+  if (out[out.length - 1] !== n - 1) {
+    if (n - 1 - out[out.length - 1] < step / 2) out.pop();
+    out.push(n - 1);
+  }
+  return out;
+}
+
 function scale(max, ticks) {
   const rough = max / ticks, p = Math.pow(10, Math.floor(Math.log10(rough))), m = rough / p;
   const step = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
@@ -529,10 +542,8 @@ function flowChart(node, days) {
   const pi = dom.findIndex(d => d.rec === peak);
   svg.appendChild(el("text", { x: x(pi), y: yl(peak.v) - 8, "text-anchor": "middle", class: "val-label" }, fmt(peak.v)));
 
-  const step = Math.max(1, Math.ceil(dom.length / 6));
-  dom.forEach((d, i) => {
-    if (i % step && i !== dom.length - 1) return;
-    svg.appendChild(el("text", { x: x(i), y: H - 4, "text-anchor": "middle", class: "tick-label" }, d.label));
+  axisIdx(dom.length, iw).forEach((i) => {
+    svg.appendChild(el("text", { x: x(i), y: H - 4, "text-anchor": "middle", class: "tick-label" }, dom[i].label));
   });
   node.appendChild(svg);
 }
@@ -582,10 +593,8 @@ function npmChart(node, days) {
   if (cutAt >= 0 && dom[cutAt]?.label) {
     svg.appendChild(el("text", { x: W - P.r - 6, y: P.t + 14, "text-anchor": "end", class: "tick-label", fill: c.machine, opacity: .75 }, `${dom[cutAt].label} 未采集`));
   }
-  const step = Math.max(1, Math.ceil(dom.length / 6));
-  dom.forEach((d, i) => {
-    if (i % step && i !== dom.length - 1) return;
-    svg.appendChild(el("text", { x: cx(i), y: H - 4, "text-anchor": "middle", class: "tick-label" }, d.label));
+  axisIdx(dom.length, iw).forEach((i) => {
+    svg.appendChild(el("text", { x: cx(i), y: H - 4, "text-anchor": "middle", class: "tick-label" }, dom[i].label));
   });
   node.appendChild(svg);
 }
@@ -745,7 +754,7 @@ function render(days) {
     ? "访客 —"
     : days === 1
       ? `访客 ${fmt(uniq)} · ${DATA[DATA.length - 1]?.d || ""}`
-      : `访客 ${fmt(uniq)} · ${Math.min(covN, 14)} 天`;
+      : `${dom.length} 天 · 访客 ${fmt(uniq)}（${Math.min(covN, 14)} 天去重）`;
   rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
   // issue/PR 数跟着所选窗口走，标题要说清是哪段
   const cSpan = LIVE.starGrowth?.span;
@@ -865,7 +874,7 @@ function renderImpact(it) {
     document.getElementById(id).textContent = b === null || b === undefined ? "—" : `${num(b)} → ${num(a)}`;
     document.getElementById(sub).textContent = pct(it.delta?.[k]) || "";
   };
-  document.getElementById("impact-ver").textContent = `${it.version} · ${String(it.at).slice(5)}${it.limited ? " · 数据不足" : ""}`;
+  document.getElementById("impact-ver").textContent = `${bareTag(it.version)} · ${String(it.at).slice(5)}${it.limited ? " · 数据不足" : ""}`;
   show("views", "impact-views", "impact-views-sub");
   show("npm", "impact-npm", "impact-npm-sub");
   const spanTxt = (o) => (o?.from && o?.to ? `${String(o.from).slice(5)} – ${String(o.to).slice(5)}` : null);
@@ -965,13 +974,14 @@ function renderImpacts(list) {
   const sameAsMain = (r) => main && ((r.url && main.url && r.url === main.url) || (String(r.at) === String(main.at) && r.version === main.version));
   const rest = main ? rows.filter((r) => !sameAsMain(r)) : rows;
   const relNote = document.getElementById("rel-note");
-  if (relNote) relNote.textContent = rows.length ? ` · ${rows.length} 个仓有发版` : "";
+  // 这行说的是能算出前后对比的仓，不是有发版的仓，别写成「有发版」
+  if (relNote) relNote.textContent = rows.length ? ` · ${rows.length} 个仓可对比` : "";
   const rank = [...rest].sort((a, b) => (b.delta?.views ?? -1e9) - (a.delta?.views ?? -1e9)).slice(0, 8);
   for (const r of rank) {
     const li = document.createElement("li");
     li.title = `${r.key} · 下载日均 ${r.before?.npm?.avg ?? "—"} → ${r.after?.npm?.avg ?? "—"}`;
     const k = document.createElement("span"); k.className = "k"; k.textContent = r.name;
-    const ver = document.createElement("span"); ver.className = "ver"; ver.textContent = `${r.version} · ${String(r.at).slice(5)}`;
+    const ver = document.createElement("span"); ver.className = "ver"; ver.textContent = `${bareTag(r.version)} · ${String(r.at).slice(5)}`;
     const v = document.createElement("span"); v.className = "v"; v.textContent = `${fmt(r.before.views.avg)} → ${fmt(r.after.views.avg)}`;
     const d = document.createElement("span"); d.className = "d"; d.textContent = pctText(r.delta?.views);
     li.append(k, ver, v, d);
@@ -982,7 +992,7 @@ function renderImpacts(list) {
     const li = document.createElement("li");
     li.className = "muted";
     li.style.cursor = "default";
-    const sp = document.createElement("span"); sp.className = "k"; sp.textContent = `另有 ${rest.length - rank.length} 个仓没有发版记录`;
+    const sp = document.createElement("span"); sp.className = "k"; sp.textContent = `另有 ${rest.length - rank.length} 个仓未列出`;
     li.appendChild(sp);
     node.appendChild(li);
   }
