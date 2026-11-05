@@ -1308,7 +1308,8 @@ async function loadSummary(days, tries = 0) {
     // 来源和回退原因都写出来，别让人以为这就是模型写的
     const why = { checked: "数字没对上", empty: "模型没返回内容" }[data.error] || (data.error ? "请求失败" : "");
     const srcEl = document.getElementById("sum-src");
-    if (srcEl) srcEl.textContent = data.source === "ai" ? "" : data.source === "none" ? "未配置模型" : why ? "模板兜底 · " + why : "模板兜底";
+    // 没有 error 的 template 是后台还在生成，不是失败，别写成「模板兜底」
+    if (srcEl) srcEl.textContent = data.source === "ai" ? "" : data.source === "none" ? "未配置模型" : why ? "模板兜底 · " + why : "模型生成中…";
     const modelEl = document.getElementById("ai-model");
     if (modelEl) modelEl.textContent = data.source === "ai" ? (data.model || "") : "";
     // 摘要第一次生成要几十秒，先给模板，生成好了再换过来
