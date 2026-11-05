@@ -535,17 +535,27 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn
             .filter((r) => r.v > 0)
             .sort((a, b) => b.v - a.v)
             .slice(0, 3);
-        if (/最热|流量最高|浏览最多|访客最多|哪个(仓库|项目).*(流量|访客|浏览)/.test(question)) {
+        if (/最热|流量最高|浏览最多|哪个(仓库|项目).*(流量|浏览)/.test(question)) {
           const rows = rankBy((d) => d.totals.views);
           if (!rows.length) return send(200, { answer: "这段时间还没有浏览记录。", source: "data" });
           const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)} 次浏览`).join("，");
           return send(200, { answer: `近 ${windowDays} 天浏览最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
+        if (/访客最多|哪个(仓库|项目).*(访客|人数)/.test(question)) {
+          const rows = rankBy((d) => d.totals.uniques);
+          if (!rows.length) return send(200, { answer: "这段时间还没有访客记录。", source: "data" });
+          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)} 位访客`).join("，");
+          return send(200, { answer: `近 ${Math.min(data.range.covered || 14, 14)} 天访客最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
+        }
         if (/star|关注数|收藏/.test(question)) {
           const rows = rankBy((d) => d.repo?.stars);
           if (!rows.length) return send(200, { answer: "还没有 star 记录。", source: "data" });
+          // 问「多少新 star」不能只回「哪个仓最多」，先给窗口新增和当前总数
+          const sg = build(windowDays, ALL).starGrowth;
+          const totalStars = targets.reduce((a, t) => a + (repoStore(store, t.key).meta?.repo?.stars ?? 0), 0);
           const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)}`).join("，");
-          return send(200, { answer: `star 最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
+          const head = `${sg ? `近 ${sg.span} 天新增 ${num(sg.delta)} 个 star，` : ""}当前共 ${num(totalStars)} 个`;
+          return send(200, { answer: `${head}；最多的是 ${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         if (/npm|下载/.test(question)) {
           const rows = rankBy((d) => d.totals.npmWeek);
