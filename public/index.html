@@ -1153,6 +1153,8 @@ function applyLive(json) {
       a.target = "_blank";
       a.rel = "noreferrer";
       a.textContent = `${top.key.split("/")[1]} ${top.open} 条`;
+      // 主数是全部仓库合计，子标只点了最大的一仓，得说清这两件事
+      asub.textContent = json.repo && json.repo.fullName === "全部仓库" ? "全部仓库合计 · 最多 " : "最多 ";
       asub.appendChild(a);
       asub.append(` · ${atype[top.type]}`);
       asub.title = flat.map((r) => `${r.key.split("/")[1]} ${atype[r.type]} ${r.open}`).join("\n");
