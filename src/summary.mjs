@@ -167,7 +167,7 @@ export async function aiSummary(ctx) {
     model,
     temperature: 0.3,
     // 推理模型会把 token 花在思考上，留够正文的额度，不然回来是空串
-    max_tokens: 2000,
+    max_tokens: 3000,
     messages: [
       {
         role: "system",
@@ -198,7 +198,7 @@ export async function aiSummary(ctx) {
     if (!text) {
       text = await send({
         ...body,
-        max_tokens: 2400,
+        max_tokens: 4000,
         messages: [...body.messages, { role: "user", content: "用两句话总结上面这些数字，直接给正文。" }],
       });
     }
@@ -213,6 +213,8 @@ export async function aiSummary(ctx) {
     // 「近 14 天访客…，7 天浏览…」是两个跨度，断成两句，别让人当成同期
     text = text.replace(/，(?=近?\s*\d+\s*天内?[^。；]{0,2}(?:浏览|访客))/g, "。");
     // 去掉列表前缀时要留住开头的数字，「14 天访客」不能被当成「14. 」删掉
+    // 模型被长度截断时末句会悬空，别让面板停在「8,403 次，」
+    text = text.replace(/[，、；：,]+\s*$/, "").replace(/([^。！？!?\s])$/, "$1。");
     const lines = text.split(/\n+/).map((s) => s.replace(/^\s*(?:[-*•]\s+|\d{1,2}[.、)]\s+)/, "").trim()).filter(Boolean).slice(0, 3);
     if (!lines.length || !aiLinesTrusted(lines, ctx)) return { source: "template", lines: templateSummary(ctx), error: "checked", raw: lines };
     return { source: "ai", lines, model };
