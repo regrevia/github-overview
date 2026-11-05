@@ -259,7 +259,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
             uniques: windowDays === 1 ? (w.at(-1)?.u ?? null) : (r.meta?.views?.uniques ?? null),
             views: w.reduce((a, x) => a + (x.v ?? 0), 0),
             npm: w.reduce((a, x) => a + (x.n ?? 0), 0),
-            stars: r.meta?.stars ?? null,
+            stars: r.meta?.repo?.stars ?? null,
           };
         })
         .sort((a, b) => (b.uniques ?? 0) - (a.uniques ?? 0)),

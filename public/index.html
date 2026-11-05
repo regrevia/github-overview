@@ -575,6 +575,11 @@ function npmChart(node, days) {
     svg.appendChild(el("rect", { x: cx(i) - bw / 2, y: y(v), width: bw, height: Math.max(2, P.t + ih - y(v)), rx: 2, fill: c.human, opacity: .85 }));
     if (v > 0 && bw > 12 && (iw / dom.length > 46 || v === NMAX)) svg.appendChild(el("text", { x: cx(i), y: y(v) - 6, "text-anchor": "middle", class: "val-label" }, fmt(v)));
   });
+  // 末尾两根柱还没采到数，标出从哪天起是空的，别让人以为是零下载
+  const cutAt = dom.findIndex((d, i) => i >= dom.length - 2 && (!d.rec || d.rec.n == null || d.rec.n === 0));
+  if (cutAt >= 0 && dom[cutAt]?.label) {
+    svg.appendChild(el("text", { x: W - P.r - 6, y: P.t + 14, "text-anchor": "end", class: "tick-label", fill: c.machine, opacity: .75 }, `${dom[cutAt].label} 未采集`));
+  }
   const step = Math.max(1, Math.ceil(dom.length / 6));
   dom.forEach((d, i) => {
     if (i % step && i !== dom.length - 1) return;
