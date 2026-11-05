@@ -313,7 +313,7 @@
       </section>
 
       <section class="sec">
-        <div class="head"><h2>贡献</h2></div>
+        <div class="head"><h2>贡献</h2><span class="src" id="contrib-range"></span></div>
         <div class="stats">
           <div><span>issue</span><b id="s-issues">1 个</b><em id="s-issues-sub">已关闭</em></div>
           <div><span>PR</span><b id="s-prs">1 个</b><em id="s-prs-sub">已合并，+118 −5</em></div>
@@ -737,6 +737,11 @@ function render(days) {
       ? `访客 ${fmt(uniq)} · ${DATA[DATA.length - 1]?.d || ""}`
       : `访客 ${fmt(uniq)} · ${Math.min(covN, 14)} 天`;
   rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
+  // issue/PR 数跟着所选窗口走，标题要说清是哪段
+  const cSpan = LIVE.starGrowth?.span;
+  document.getElementById("contrib-range").textContent = days === 1 && LIVE.range?.to
+    ? label(LIVE.range.to)
+    : cSpan ? `近 ${cSpan} 天` : `近 ${days} 天`;
   flowChart(document.getElementById("c-flow"), days);
   npmChart(document.getElementById("c-npm"), days);
   donut(document.getElementById("donut"));
