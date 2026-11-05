@@ -183,7 +183,8 @@
   .ask-out { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: var(--label-secondary); }
   .ask-out a { color: var(--brand); text-decoration: none; }
   .ask-out a:hover { text-decoration: underline; }
-  .foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--label-secondary); margin-top: 12px; }
+  .foot { display: flex; align-items: baseline; gap: 8px; font-size: 12px; color: var(--label-secondary); margin-top: 12px; }
+  #sum-src { margin-right: auto; }
   .link { color: var(--label-secondary); border: 0; height: auto; padding: 0; background: none; text-decoration: underline; text-underline-offset: 2px; }
   .link:hover { color: var(--label-primary); background: none; }
   .rowline { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--label-secondary); }
@@ -371,16 +372,16 @@
     <aside>
       <div class="panel ai">
         <h3>摘要<span id="sum-at">11-02 09:14</span></h3>
-        <p id="sum-1">近 7 天约 <b>341</b> 人来看过仓库。</p>
-        <p id="sum-2">外部提了 1 个 issue、1 个 PR。</p>
-        <p id="sum-3">Star 涨到 <b>9</b>，npm 周下载 1.05 万。</p>
+        <p id="sum-1">摘要正在生成。</p>
+        <p id="sum-2" hidden></p>
+        <p id="sum-3" hidden></p>
 
         <div class="ask">
           <input placeholder="问这个仓库">
           <button class="mini">问</button>
         </div>
         <p class="ask-out" id="ask-out" hidden></p>
-        <div class="foot"><span id="ai-model">deepseek-chat</span><button class="link" id="cfg-toggle">配置</button></div>
+        <div class="foot"><span id="ai-model">—</span><span id="sum-src"></span><button class="link" id="cfg-toggle">配置</button></div>
 
         <div class="cfg" id="cfg">
           <div class="cfg-row"><label>Base URL</label><input id="cfg-base" placeholder="https://api.deepseek.com/v1" spellcheck="false"></div>
@@ -521,7 +522,7 @@ function flowChart(node, days) {
     if (tpts.length > 1) svg.appendChild(el("polyline", { points: tpts.join(" "), fill: "none", stroke: c.human, "stroke-width": 1.5, "stroke-dasharray": "3 4", opacity: .55 }));
     const cutLabel = dom[cut]?.label ?? "";
     // 贴右轴会压住末端的刻度数字，改放在未采集灰区的左下
-    svg.appendChild(el("text", { x: cx(cut) - 8, y: P.t + 12, "text-anchor": "end", class: "tick-label", fill: c.human, opacity: .75 }, cutLabel ? `${cutLabel} 未采集` : "未采集"));
+    svg.appendChild(el("text", { x: x(cut) - 8, y: P.t + 12, "text-anchor": "end", class: "tick-label", fill: c.human, opacity: .75 }, cutLabel ? `${cutLabel} 未采集` : "未采集"));
   }
 
   const peak = DATA.reduce((a, b) => b.v > a.v ? b : a);
@@ -1270,16 +1271,21 @@ async function loadSummary(days, tries = 0) {
       const node = document.getElementById(id);
       if (!node) return;
       node.textContent = lines[i] || "";
+      node.hidden = !lines[i];
     });
     const at = document.getElementById("sum-at");
     if (at) at.textContent = new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).replace("/", "-");
-    document.getElementById("cfg-toggle").textContent = data.source === "none" ? "未连通" : data.source === "ai" ? "已配置" : "模板摘要";
-    // 模板兜底时左边不挂模型名
+    // 来源和回退原因都写出来，别让人以为这就是模型写的
+    const why = { checked: "数字没对上", empty: "模型没返回内容" }[data.error] || (data.error ? "请求失败" : "");
+    const srcEl = document.getElementById("sum-src");
+    if (srcEl) srcEl.textContent = data.source === "ai" ? "" : data.source === "none" ? "未配置模型" : why ? "模板兜底 · " + why : "模板兜底";
     const modelEl = document.getElementById("ai-model");
     if (modelEl) modelEl.textContent = data.source === "ai" ? (data.model || "") : "";
     // 摘要第一次生成要几十秒，先给模板，生成好了再换过来
     if (data.source === "template" && tries < 3) setTimeout(() => loadSummary(days, tries + 1), 5000);
-  } catch (e) {}
+  } catch (e) {
+    console.error("summary failed", e);
+  }
 }
 
 document.querySelector(".ask button").addEventListener("click", async () => {
