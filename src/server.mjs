@@ -538,26 +538,26 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn
         if (/最热|流量最高|浏览最多|访客最多|哪个(仓库|项目).*(流量|访客|浏览)/.test(question)) {
           const rows = rankBy((d) => d.totals.views);
           if (!rows.length) return send(200, { answer: "这段时间还没有浏览记录。", source: "data" });
-          const body = rows.map((r, i) => `${i ? "其次 " : ""}${r.name} ${num(r.v)} 次浏览`).join("，");
+          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)} 次浏览`).join("，");
           return send(200, { answer: `近 ${windowDays} 天浏览最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         if (/star|关注数|收藏/.test(question)) {
           const rows = rankBy((d) => d.repo?.stars);
           if (!rows.length) return send(200, { answer: "还没有 star 记录。", source: "data" });
-          const body = rows.map((r, i) => `${i ? "其次 " : ""}${r.name} ${num(r.v)}`).join("，");
+          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)}`).join("，");
           return send(200, { answer: `star 最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         if (/npm|下载/.test(question)) {
           const rows = rankBy((d) => d.totals.npmWeek);
           if (!rows.length) return send(200, { answer: "没有关联 npm 的仓库。", source: "data" });
-          const body = rows.map((r, i) => `${i ? "其次 " : ""}${r.name} 周下载 ${num(r.v)}`).join("，");
+          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} 周下载 ${num(r.v)}`).join("，");
           return send(200, { answer: `npm 周下载最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         if (/发版|发布.*(效果|影响)|涨了多少/.test(question)) {
           // 基线太小的仓，倍数只是噪声（0.3 → 12 也是 ×39），低于日均 5 次浏览的不参与排名
           const rows = rankBy((d) => ((d.impact?.before?.views?.avg ?? 0) >= 5 ? (d.impact?.delta?.views ?? 0) : 0));
           if (!rows.length) return send(200, { answer: "近期的发版还看不出效果。", source: "data" });
-          const body = rows.map((r, i) => `${i ? "其次 " : ""}${r.name} ×${(1 + r.v / 100).toFixed(1)}`).join("，");
+          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ×${(1 + r.v / 100).toFixed(1)}`).join("，");
           return send(200, { answer: `发版后浏览涨得最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         const topRepos = key === ALL ? null : targets
