@@ -210,6 +210,8 @@ export async function aiSummary(ctx) {
     text = text.replace(/([\u4e00-\u9fa5])([A-Za-z])/g, "$1 $2").replace(/([A-Za-z])([\u4e00-\u9fa5])/g, "$1 $2");
     // issue8 / PR5 这种也要断开，但版本号、仓库名里的数字不动
     text = text.replace(/\b(issues?|PRs?|stars|npm)(?=\d)/g, "$1 ");
+    // 「近 14 天访客…，7 天浏览…」是两个跨度，断成两句，别让人当成同期
+    text = text.replace(/，(?=近?\s*\d+\s*天内?[^。；]{0,2}(?:浏览|访客))/g, "。");
     // 去掉列表前缀时要留住开头的数字，「14 天访客」不能被当成「14. 」删掉
     const lines = text.split(/\n+/).map((s) => s.replace(/^\s*(?:[-*•]\s+|\d{1,2}[.、)]\s+)/, "").trim()).filter(Boolean).slice(0, 3);
     if (!lines.length || !aiLinesTrusted(lines, ctx)) return { source: "template", lines: templateSummary(ctx), error: "checked", raw: lines };
