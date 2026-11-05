@@ -281,7 +281,11 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 120),
       npmVersions,
       impact: windowDays < 7 ? null : (() => {
-        const all = slices.map(({ s }) => impactOf(s)).filter((x) => x && x.at >= rows[0]?.d);
+        // 主卡也要带上仓名，否则只有一个版本号，看不出是哪个仓
+        const all = slices.map(({ t, s }) => {
+          const im = impactOf(s);
+          return im && im.before?.views ? { key: t.key, name: t.key.split("/")[1] || t.key, ...im } : null;
+        }).filter((x) => x && x.at >= rows[0]?.d);
         const ok = all.filter((x) => !x.limited).sort((a, b) => b.at.localeCompare(a.at));
         return ok[0] || all.sort((a, b) => b.at.localeCompare(a.at))[0] || null;
       })(),

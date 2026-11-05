@@ -871,7 +871,8 @@ function renderImpact(it) {
     document.getElementById(id).textContent = b === null || b === undefined ? "—" : `${num(b)} → ${num(a)}`;
     document.getElementById(sub).textContent = pct(it.delta?.[k]) || "";
   };
-  document.getElementById("impact-ver").textContent = `${bareTag(it.version)} · ${String(it.at).slice(5)}${it.limited ? " · 数据不足" : ""}`;
+  // 全局视图主卡不止一个仓，版本号前面要带仓名，不然不知道说的是谁
+  document.getElementById("impact-ver").textContent = `${it.name ? it.name + " " : ""}${bareTag(it.version)} · ${String(it.at).slice(5)}${it.limited ? " · 数据不足" : ""}`;
   show("views", "impact-views", "impact-views-sub");
   show("npm", "impact-npm", "impact-npm-sub");
   const spanTxt = (o) => (o?.from && o?.to ? `${String(o.from).slice(5)} – ${String(o.to).slice(5)}` : null);
