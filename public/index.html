@@ -1063,8 +1063,9 @@ function applyLive(json) {
   document.getElementById("k-contrib").textContent = ic + pc;
   // 1 天视图报的是最近一个完整日，不是今天
   const dayLbl = json.range && json.range.to ? label(json.range.to) : "今天";
+  // 子标要说清是哪几类反馈，别只给一个合计
   document.getElementById("k-contrib-sub").textContent = currentRange === 1
-    ? (ic + pc ? dayLbl + " " + (ic + pc) + " 个" : dayLbl + " 没有新的")
+    ? (ic + pc ? dayLbl + " " + ic + " issue、" + pc + " PR" : dayLbl + " 没有新的")
     : ic + " issue、" + pc + " PR";
   document.getElementById("k-stars").textContent = repo.stars ?? "—";
   // 星标增长只报真实覆盖区间：1 天报当天，多天报有数据的跨度
