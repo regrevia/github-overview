@@ -392,7 +392,7 @@
       </div>
 
       <div class="panel">
-        <h3>刷新<span>每天 21:00</span></h3>
+        <h3>刷新<span id="r-interval">—</span></h3>
         <div class="rowline"><span>上次</span><b id="r-last">—</b></div>
         <div class="rowline"><span>已存</span><b id="r-days">8 天</b></div>
         <div class="rowline" style="margin-top:10px"><span>数据源</span><b>GitHub · npm</b></div>
@@ -1361,7 +1361,17 @@ document.querySelector(".ask button").addEventListener("click", async () => {
 
 const segInit = document.getElementById("seg");
 [...segInit.children].forEach((b) => b.classList.toggle("on", +b.dataset.r === currentRange));
-loadRepos().then(() => pull(currentRange));
+// 「刷新」周期跟着后端启动参数走，页面上不写死一个时间
+async function loadInterval() {
+  try {
+    const r = await fetch("/api/progress");
+    const st = await r.json();
+    const el = document.getElementById("r-interval");
+    if (el && st.intervalHours) el.textContent = `每 ${st.intervalHours} 小时`;
+  } catch { /* 拿不到就留着占位 */ }
+}
+
+loadRepos().then(() => { pull(currentRange); loadInterval(); });
 softRefresh();
 let rzT;
 addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => render(currentRange), 160); });

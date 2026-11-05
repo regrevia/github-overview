@@ -94,7 +94,7 @@ try {
   }
 
   if (cmd === "sync") {
-    const app = createApp({ repos, days, cfg });
+    const app = createApp({ repos, days, intervalHours, cfg });
     const out = await app.sync();
     for (const r of out.results) console.log(`${r.ok ? "同步" : "失败"} ${r.repo}${r.error ? "：" + r.error : ""}`);
     console.log(`同步完成 ${out.syncedAt}`);
@@ -102,7 +102,7 @@ try {
   }
 
   if (cmd === "start") {
-    const app = createApp({ repos, days, cfg });
+    const app = createApp({ repos, days, intervalHours, cfg });
     const addr = await app.listen(port);
     console.log(`github-overview 在 http://127.0.0.1:${addr.port}`);
     console.log(`已绑定 ${cfg.user}，${repos.length} 个仓库`);

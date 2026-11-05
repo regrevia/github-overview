@@ -16,7 +16,7 @@ const ALL = "all";
 // 摘要别拖慢页面：先回模板，AI 结果进缓存下一次带出来
 const SUM_CACHE = new Map();
 
-export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
+export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn } = {}) {
   const cfg = cfgIn || readConfig();
   const list = repos || normalizeConfig(cfg).repos || (repo ? [{ repo, npm: cfg.npm }] : []);
   if (!list.length) throw new Error("还没有配置仓库");
@@ -444,7 +444,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         return send(200, build(windowDays, url.searchParams.get("repo") || ALL));
       }
       if (url.pathname === "/api/progress") {
-        return send(200, syncProgress);
+        return send(200, { ...syncProgress, intervalHours });
       }
       if (url.pathname === "/api/sync" && req.method === "POST") {
         return send(200, await sync());
