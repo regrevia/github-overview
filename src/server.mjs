@@ -469,15 +469,20 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
           paths: data.paths,
           scope: key === ALL ? `你的 ${targets.length} 个仓库` : key,
         };
-        const ck = `${key}|${windowDays}`;
+        // 数据一同步，旧的摘要就该作废，否则会拿上一版的星数继续讲
+        const ck = `${key}|${windowDays}|${data.updatedAt || ""}`;
         const hit = SUM_CACHE.get(ck);
         const now = Date.now();
         if (hit?.val && now - hit.at < 300000) return send(200, hit.val);
         if (!hit?.busy) {
           SUM_CACHE.set(ck, { at: hit?.at || 0, val: hit?.val || null, busy: true });
+          if (SUM_CACHE.size > 200) SUM_CACHE.clear();
           aiSummary(ctx)
             .then((r) => SUM_CACHE.set(ck, { at: Date.now(), val: r, busy: false }))
-            .catch(() => SUM_CACHE.set(ck, { at: hit?.at || 0, val: hit?.val || null, busy: false }));
+            .catch((e) => {
+              console.error("summary failed", key, windowDays, e?.message || e);
+              SUM_CACHE.set(ck, { at: hit?.at || 0, val: hit?.val || null, busy: false });
+            });
         }
         return send(200, hit?.val || { source: "template", lines: templateSummary(ctx) });
       }
