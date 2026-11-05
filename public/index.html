@@ -335,7 +335,7 @@
       </section>
 
       <section class="sec" id="sec-cmp" hidden>
-        <div class="head"><h2>发版前后 · 浏览/天</h2></div>
+        <div class="head"><h2>发版前后 · 浏览/天<span class="head-note" id="rel-note"></span></h2></div>
         <div class="cmp"><ul id="cmp-list"></ul></div>
       </section>
 
@@ -961,6 +961,8 @@ function renderImpacts(list) {
   const main = LIVE.impact;
   const sameAsMain = (r) => main && ((r.url && main.url && r.url === main.url) || (String(r.at) === String(main.at) && r.version === main.version));
   const rest = main ? rows.filter((r) => !sameAsMain(r)) : rows;
+  const relNote = document.getElementById("rel-note");
+  if (relNote) relNote.textContent = rows.length ? ` · ${rows.length} 个仓有发版` : "";
   const rank = [...rest].sort((a, b) => (b.delta?.views ?? -1e9) - (a.delta?.views ?? -1e9)).slice(0, 8);
   for (const r of rank) {
     const li = document.createElement("li");
@@ -977,7 +979,7 @@ function renderImpacts(list) {
     const li = document.createElement("li");
     li.className = "muted";
     li.style.cursor = "default";
-    const sp = document.createElement("span"); sp.className = "k"; sp.textContent = `另有 ${rest.length - rank.length} 个`;
+    const sp = document.createElement("span"); sp.className = "k"; sp.textContent = `另有 ${rest.length - rank.length} 个仓没有发版记录`;
     li.appendChild(sp);
     node.appendChild(li);
   }
@@ -991,8 +993,8 @@ function renderFunnel(f) {
   document.getElementById("f-home").textContent = f.home == null ? "—" : fmt(f.home);
   document.getElementById("f-home-sub").textContent = f.home == null ? "" : Math.round((f.home / f.views) * 100) + "% 浏览";
   document.getElementById("f-npm").textContent = f.npm == null ? "—" : fmt(f.npm);
-  const r = f.npm == null ? null : f.npm / f.views;
-  document.getElementById("f-npm-sub").textContent = r == null ? "" : r >= 1 ? `是浏览的 ${r.toFixed(1)} 倍` : `每 100 次浏览 ${Math.round(r * 100)} 次下载`;
+  // npm 是周汇总，浏览是 14 天，跨窗口算倍数会误导，只给日均
+  document.getElementById("f-npm-sub").textContent = f.npm == null ? "" : `周汇总 · 日均 ${fmt(Math.round(f.npm / 7))} 次`;
 }
 
 function applyLive(json) {
@@ -1021,7 +1023,13 @@ function applyLive(json) {
   }
   if (Array.isArray(json.referrers) && json.referrers.length) {
     const refTotal = json.referrers.reduce((a, r) => a + r.n, 0);
-    RANKS = [["从哪来", json.referrers.slice(0, 4).map(r => [r.from.replace(/^www\./, ""), r.n]), refTotal ? `有来源 ${refTotal.toLocaleString("en-US")} 次` : ""]];
+    const refTop = json.referrers.slice(0, 4);
+    const refShown = refTop.reduce((a, r) => a + r.n, 0);
+    const refRest = refTotal - refShown;
+    const refNote = refTotal
+      ? `有来源 ${refTotal.toLocaleString("en-US")} 次${refRest > 0 ? ` · 另有 ${refRest} 次` : ""}`
+      : "";
+    RANKS = [["从哪来", refTop.map(r => [r.from.replace(/^www\./, ""), r.n]), refNote]];
   }
   const repo = json.repo || {};
   const ownerEl = document.getElementById("repo-owner");
