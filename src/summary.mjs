@@ -22,7 +22,10 @@ export function templateSummary(ctx) {
   lines.push(ic || pc ? `外部提了 ${ic} 个 issue、${pc} 个 PR。` : `这段时间没有外部 issue 或 PR。`);
   const sg = ctx.starGrowth;
   // 「同期」读者没法对上跨度，直接写清楚是当天还是近几天
-  const sgTxt = sg && sg.delta != null ? (sg.span === 1 ? `当天 +${sg.delta}` : `近 ${sg.span} 天 +${sg.delta}`) : "";
+  // 一天窗口写实际日期，不写「当天」，否则和 KPI 上的日期对不上
+  const sgTxt = sg && sg.delta != null
+    ? (sg.span === 1 ? `${String(sg.to || "").slice(5)} +${sg.delta}` : `近 ${sg.span} 天 +${sg.delta}`)
+    : "";
   if (stars) lines.push(`Star 共 ${stars}${sgTxt ? `（${sgTxt}）` : ""}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
   return lines;
 }

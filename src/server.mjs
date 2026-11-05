@@ -94,7 +94,8 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     s.releases = [...merged.values()]
       .filter((r) => r.at)
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-      .slice(0, 30);
+      // 每个仓留足够长的历史，别让截断把 90 天窗口里的发版数算少
+      .slice(0, 200);
     s.meta.syncedAt = new Date().toISOString();
     s.meta.error = null;
     return { repo: t.key, ok: true };
@@ -277,7 +278,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         .sort((a, b) => (a.limited === b.limited ? b.at.localeCompare(a.at) : a.limited ? 1 : -1)),
       paths: [...paths.values()].sort((a, b) => b.n - a.n),
       referrers: [...referrers.values()].sort((a, b) => b.n - a.n),
-      releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30),
+      releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 120),
       npmVersions,
       impact: windowDays < 7 ? null : (() => {
         const all = slices.map(({ s }) => impactOf(s)).filter((x) => x && x.at >= rows[0]?.d);

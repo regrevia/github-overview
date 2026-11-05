@@ -1064,9 +1064,16 @@ function applyLive(json) {
     : "";
   document.getElementById("k-forks").textContent = (gTxt ? gTxt + " · " : "") + (repo.forks ?? 0) + " forks" + (repo.fullName === "全部仓库" && repo.count ? " · " + repo.count + " 个仓" : "");
   const rels = (json.releases || []).filter(r => DATA.some(x => x.d === label(r.at)));
-  document.getElementById("k-rel").textContent = rels.length;
+  // 每仓最多取 100 条 release，长窗口里更早的会被挤掉；覆盖不满整窗时数字写成下限，并说明是哪几天
+  const relDays = rels.length
+    ? Math.round((Date.parse(label(rels[0].at)) - Date.parse(label(rels[rels.length - 1].at))) / 864e5) + 1
+    : 0;
+  const relFull = relDays >= (json.series || []).length;
+  document.getElementById("k-rel").textContent = relFull ? rels.length : rels.length + "+";
   document.getElementById("k-rel-sub").textContent = rels.length
-    ? (repo.fullName === "全部仓库" ? "最近 " + label(rels[0].at) : bareTag(rels[rels.length - 1].tag) + " → " + bareTag(rels[0].tag))
+    ? (repo.fullName === "全部仓库"
+      ? (relFull ? "最近 " + label(rels[0].at) : label(rels[rels.length - 1].at) + " → " + label(rels[0].at) + " · " + relDays + " 天")
+      : bareTag(rels[rels.length - 1].tag) + " → " + bareTag(rels[0].tag) + (relFull ? "" : " · " + relDays + " 天"))
     : "本窗口无发版";
   const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open" && !x.comments);
   document.getElementById("s-issues").textContent = ic + " 个";
