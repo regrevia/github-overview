@@ -1282,7 +1282,8 @@ async function loadSummary(days, tries = 0) {
     const modelEl = document.getElementById("ai-model");
     if (modelEl) modelEl.textContent = data.source === "ai" ? (data.model || "") : "";
     // 摘要第一次生成要几十秒，先给模板，生成好了再换过来
-    if (data.source === "template" && tries < 3) setTimeout(() => loadSummary(days, tries + 1), 5000);
+    // 模型一次要几十秒，间隔逐次拉长，最多等两分多钟
+    if (data.source === "template" && tries < 5) setTimeout(() => loadSummary(days, tries + 1), Math.min(5000 * (tries + 1), 20000));
   } catch (e) {
     console.error("summary failed", e);
   }
