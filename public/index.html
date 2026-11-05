@@ -520,7 +520,8 @@ function flowChart(node, days) {
     if ((tail[tail.length - 1].v || 0) === 0) tpts.pop();
     if (tpts.length > 1) svg.appendChild(el("polyline", { points: tpts.join(" "), fill: "none", stroke: c.human, "stroke-width": 1.5, "stroke-dasharray": "3 4", opacity: .55 }));
     const cutLabel = dom[cut]?.label ?? "";
-    svg.appendChild(el("text", { x: W - P.r - 6, y: P.t + 14, "text-anchor": "end", class: "tick-label", fill: c.human, opacity: .75 }, cutLabel ? `${cutLabel} 未采集` : "未采集"));
+    // 贴右轴会压住末端的刻度数字，改放在未采集灰区的左下
+    svg.appendChild(el("text", { x: cx(cut) - 8, y: P.t + 12, "text-anchor": "end", class: "tick-label", fill: c.human, opacity: .75 }, cutLabel ? `${cutLabel} 未采集` : "未采集"));
   }
 
   const peak = DATA.reduce((a, b) => b.v > a.v ? b : a);

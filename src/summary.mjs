@@ -73,6 +73,13 @@ function aiLinesTrusted(lines, ctx) {
     ...(ctx.topRepos || []).map((r) => r.u),
     ctx.starGrowth?.span, ctx.starGrowth?.delta,
     ctx.external?.issues?.length, ctx.external?.pulls?.length,
+    // 明细里的编号、发版前后的日均、最热页面的次数，都会原样出现在 prompt 里
+    ...(ctx.external?.issues || []).map((i) => i.number),
+    ...(ctx.external?.pulls || []).map((p) => p.number),
+    ...(ctx.impacts || []).flatMap((i) => [i.before?.views?.avg, i.after?.views?.avg, i.before?.npm?.avg, i.after?.npm?.avg]),
+    ctx.impact?.before?.views?.avg, ctx.impact?.after?.views?.avg,
+    ctx.impact?.before?.npm?.avg, ctx.impact?.after?.npm?.avg,
+    ...(ctx.paths || []).slice(0, 3).map((p) => p.n),
   ].filter((v) => typeof v === "number");
   for (const line of lines) {
     if (/^[^\d]{0,4}个仓库/.test(line.trim())) return false;
@@ -200,7 +207,9 @@ export async function aiSummary(ctx) {
     text = text.replace(/\b\d{4,}\b/g, (m) => Number(m).toLocaleString("en-US"));
     // 汉字和数字之间留空格，跟界面上的排版一致
     text = text.replace(/([\u4e00-\u9fa5])(\d)/g, "$1 $2").replace(/(\d)([\u4e00-\u9fa5])/g, "$1 $2");
-    const lines = text.split(/\n+/).map((s) => s.replace(/^[-*\d.、\s]+/, "").trim()).filter(Boolean).slice(0, 3);
+    text = text.replace(/([\u4e00-\u9fa5])([A-Za-z])/g, "$1 $2").replace(/([A-Za-z])([\u4e00-\u9fa5])/g, "$1 $2");
+    // 去掉列表前缀时要留住开头的数字，「14 天访客」不能被当成「14. 」删掉
+    const lines = text.split(/\n+/).map((s) => s.replace(/^\s*(?:[-*•]\s+|\d{1,2}[.、)]\s+)/, "").trim()).filter(Boolean).slice(0, 3);
     if (!lines.length || !aiLinesTrusted(lines, ctx)) return { source: "template", lines: templateSummary(ctx), error: "checked", raw: lines };
     return { source: "ai", lines, model };
   } catch (e) {
