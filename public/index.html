@@ -953,6 +953,8 @@ document.getElementById("ov-sort").addEventListener("click", (e) => {
 function pctText(d) {
   if (d === null || d === undefined) return "";
   const r = 1 + d / 100;
+  // 显示的倍数四舍五入到 ×1.0 时就是持平，别配上升箭头
+  if (Number(r.toFixed(1)) === 1) return "持平";
   const arrow = r >= 1 ? "↑ " : "↓ ";
   if (r >= 10) return arrow + "×" + Math.round(r);
   if (r >= 0.1) return arrow + "×" + r.toFixed(1);
