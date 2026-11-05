@@ -1252,7 +1252,7 @@ async function softRefresh() {
 addEventListener("visibilitychange", () => { if (!document.hidden) softRefresh(); });
 
 let SUM_SEQ = 0;
-async function loadSummary(days) {
+async function loadSummary(days, tries = 0) {
   const seq = ++SUM_SEQ;
   try {
     const res = await fetch("/api/summary?days=" + days + "&repo=" + encodeURIComponent(currentRepo), { cache: "no-store" });
@@ -1271,6 +1271,8 @@ async function loadSummary(days) {
     // 模板兜底时左边不挂模型名
     const modelEl = document.getElementById("ai-model");
     if (modelEl) modelEl.textContent = data.source === "ai" ? (data.model || "") : "";
+    // 摘要第一次生成要几十秒，先给模板，生成好了再换过来
+    if (data.source === "template" && tries < 3) setTimeout(() => loadSummary(days, tries + 1), 5000);
   } catch (e) {}
 }
 
