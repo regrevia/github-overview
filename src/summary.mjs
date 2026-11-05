@@ -49,7 +49,7 @@ const detailLines = (external) => {
 
 const factLines = (ctx) =>
   [
-    `范围：${ctx.scope || "本仓库"}。issue/PR/发版按近 ${ctx.days} 天`,
+    `范围：${ctx.scope || "本仓库"}。issue/PR/发版按图上 ${ctx.span ?? ctx.days} 天`,
     `访客是近 ${Math.min(ctx.covered || 14, 14)} 天的去重人数（GitHub 只给这个长度）：${ctx.uniques ?? "未知"} 人`,
     `图上的区间是 ${ctx.span ?? ctx.days} 天，区间内浏览 ${ctx.views ?? "未知"} 次；浏览比访客多，因为同一个人可以看多次`,
     `这两段的时间长度不同，写的时候分开说，不要合并成同一个「近 N 天」`,
@@ -69,14 +69,16 @@ const near = (d, a) => typeof a === "number" && Math.abs(d - a) / Math.max(Math.
 function aiLinesTrusted(lines, ctx) {
   const allowed = [
     ctx.uniques, ctx.views, ctx.days, ctx.covered, Math.min(ctx.covered || 14, 14),
-    ctx.stars, ctx.npmWeek, ctx.funnel?.views, ctx.funnel?.home, ctx.funnel?.npm,
+    ctx.stars, ctx.npmWeek, ctx.allTotal, ctx.funnel?.views, ctx.funnel?.home, ctx.funnel?.npm,
+    ...(ctx.topRepos || []).map((r) => r.u),
     ctx.starGrowth?.span, ctx.starGrowth?.delta,
     ctx.external?.issues?.length, ctx.external?.pulls?.length,
   ].filter((v) => typeof v === "number");
   for (const line of lines) {
     if (/^[^\d]{0,4}个仓库/.test(line.trim())) return false;
-    for (const m of line.matchAll(/(\d+(?:\.\d+)?)\s*(万|人|次|条|个)?/g)) {
-      const v = Number(m[1]) * (m[2] === "万" ? 10000 : 1);
+    // 千分位要整体当一个数，否则 9,382 会被拆成 9 和 382 再被拒
+    for (const m of line.matchAll(/(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(万|人|次|条|个)?/g)) {
+      const v = Number(String(m[1]).replace(/,/g, "")) * (m[2] === "万" ? 10000 : 1);
       if (v < 200) continue;
       if (!allowed.some((a) => near(v, a))) return false;
     }
@@ -157,7 +159,8 @@ export async function aiSummary(ctx) {
   const body = {
     model,
     temperature: 0.3,
-    max_tokens: 900,
+    // 推理模型会把 token 花在思考上，留够正文的额度，不然回来是空串
+    max_tokens: 2000,
     messages: [
       {
         role: "system",
@@ -176,7 +179,8 @@ export async function aiSummary(ctx) {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apikey}` },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30000),
+      // 推理模型写两三句话要几十秒，给足时间，不然每次都被 abort 退回模板
+      signal: AbortSignal.timeout(55000),
     });
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
@@ -187,15 +191,17 @@ export async function aiSummary(ctx) {
     if (!text) {
       text = await send({
         ...body,
-        max_tokens: 1200,
+        max_tokens: 2400,
         messages: [...body.messages, { role: "user", content: "用两句话总结上面这些数字，直接给正文。" }],
       });
     }
     if (!text) throw new Error("empty");
     // 四位以上整数补千分位，跟界面上的数字写法一致
     text = text.replace(/\b\d{4,}\b/g, (m) => Number(m).toLocaleString("en-US"));
+    // 汉字和数字之间留空格，跟界面上的排版一致
+    text = text.replace(/([\u4e00-\u9fa5])(\d)/g, "$1 $2").replace(/(\d)([\u4e00-\u9fa5])/g, "$1 $2");
     const lines = text.split(/\n+/).map((s) => s.replace(/^[-*\d.、\s]+/, "").trim()).filter(Boolean).slice(0, 3);
-    if (!lines.length || !aiLinesTrusted(lines, ctx)) return { source: "template", lines: templateSummary(ctx), error: "checked" };
+    if (!lines.length || !aiLinesTrusted(lines, ctx)) return { source: "template", lines: templateSummary(ctx), error: "checked", raw: lines };
     return { source: "ai", lines, model };
   } catch (e) {
     return { source: "template", lines: templateSummary(ctx), error: String(e.message || e) };
