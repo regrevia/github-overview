@@ -1023,7 +1023,12 @@ function applyLive(json) {
     ? (ic + pc ? dayLbl + " " + (ic + pc) + " 个" : dayLbl + " 没有新的")
     : ic + " issue、" + pc + " PR";
   document.getElementById("k-stars").textContent = repo.stars ?? "—";
-  document.getElementById("k-forks").textContent = (repo.forks ?? 0) + " forks" + (repo.fullName === "全部仓库" && repo.count ? " · " + repo.count + " 个仓" : "");
+  // 星标增长只报真实覆盖区间：1 天报当天，多天报有数据的跨度
+  const sg = json.starGrowth;
+  const gTxt = sg && Number.isFinite(sg.delta) && sg.span
+    ? (sg.span === 1 ? label(sg.to) : "近 " + sg.span + " 天") + " " + (sg.delta > 0 ? "+" + sg.delta : sg.delta === 0 ? "±0" : String(sg.delta))
+    : "";
+  document.getElementById("k-forks").textContent = (gTxt ? gTxt + " · " : "") + (repo.forks ?? 0) + " forks" + (repo.fullName === "全部仓库" && repo.count ? " · " + repo.count + " 个仓" : "");
   const rels = (json.releases || []).filter(r => DATA.some(x => x.d === label(r.at)));
   document.getElementById("k-rel").textContent = rels.length;
   document.getElementById("k-rel-sub").textContent = rels.length

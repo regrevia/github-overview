@@ -10,10 +10,11 @@ export function templateSummary(ctx) {
   if (views == null && uniques == null) lines.push(`还没有访问记录。`);
   else if (days === 1 && day) lines.push(`${String(day).slice(5)} 浏览 ${n(views ?? 0)}、访客 ${n(uniques ?? 0)}。`);
   else if (!uniques && !views) lines.push(`这段时间还没有访客。`);
-  else { const span = Math.min(days, covered || days); const ud = Math.min(covered || 14, 14); lines.push(`${span} 天 ${n(views)} 次浏览${uniques ? `、访客 ${n(uniques)}（${ud} 天去重）` : ""}。`); }
+  else { const span = ctx.span || Math.min(days, covered || days); const ud = Math.min(covered || 14, 14); lines.push(`${span} 天 ${n(views)} 次浏览${uniques ? `、访客 ${n(uniques)}（${ud} 天去重）` : ""}。`); }
   const ic = external.issues.length, pc = external.pulls.length;
   lines.push(ic || pc ? `外部提了 ${ic} 个 issue、${pc} 个 PR。` : `这段时间没有外部 issue 或 PR。`);
-  if (stars) lines.push(`Star 共 ${stars}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
+  const sg = ctx.starGrowth;
+  if (stars) lines.push(`Star 共 ${stars}${sg && sg.delta ? `（同期 +${sg.delta}）` : ""}${npmWeek ? `，npm 周下载 ${fmt(npmWeek)}` : ""}。`);
   return lines;
 }
 
@@ -43,7 +44,7 @@ const factLines = (ctx) =>
   [
     `范围：${ctx.scope || "本仓库"}。issue/PR/发版按近 ${ctx.days} 天`,
     `访客是近 ${Math.min(ctx.covered || 14, 14)} 天的去重人数（GitHub 只给这个长度）：${ctx.uniques ?? "未知"} 人`,
-    `所选 ${ctx.days} 天范围内浏览 ${ctx.views ?? "未知"} 次；浏览比访客多，因为同一个人可以看多次`,
+    `图上的区间是 ${ctx.span ?? ctx.days} 天，区间内浏览 ${ctx.views ?? "未知"} 次；浏览比访客多，因为同一个人可以看多次`,
     `这两段的时间长度不同，写的时候分开说，不要合并成同一个「近 N 天」`,
     ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
     `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
@@ -51,7 +52,8 @@ const factLines = (ctx) =>
     ...(ctx.funnel ? [`漏斗：浏览 ${ctx.funnel.views ?? "—"} → 仓库主页 ${ctx.funnel.home ?? "—"} → npm 下载 ${ctx.funnel.npm ?? "—"}`] : []),
     ...(ctx.impacts?.length ? [`各仓最近发版日均浏览：${ctx.impacts.slice(0, 6).map((i) => `${i.name} ${i.before?.views?.avg ?? "—"}→${i.after?.views?.avg ?? "—"}`).join("、")}`] : []),
     ...(ctx.impact ? [`最近发版 ${ctx.impact.version}（${mmdd(ctx.impact.at)}）：前 7 天日均浏览 ${ctx.impact.before.views?.avg ?? "—"}、下载 ${ctx.impact.before.npm?.avg ?? "—"}，后 7 天 ${ctx.impact.after.views?.avg ?? "—"}、${ctx.impact.after.npm?.avg ?? "—"}`] : []),
-    `stars 合计 ${ctx.stars}（总数，不是新增），npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
+    `stars 合计 ${ctx.stars}（当前总数），上面这段区间新增 ${ctx.starGrowth?.delta ?? "—"}，总数和新增要分开说`,
+    `npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
     `最热页面：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
   ].join("\n");
 
@@ -61,6 +63,7 @@ function aiLinesTrusted(lines, ctx) {
   const allowed = [
     ctx.uniques, ctx.views, ctx.days, ctx.covered, Math.min(ctx.covered || 14, 14),
     ctx.stars, ctx.npmWeek, ctx.funnel?.views, ctx.funnel?.home, ctx.funnel?.npm,
+    ctx.starGrowth?.span, ctx.starGrowth?.delta,
     ctx.external?.issues?.length, ctx.external?.pulls?.length,
   ].filter((v) => typeof v === "number");
   for (const line of lines) {

@@ -1,11 +1,11 @@
 const API = "https://api.github.com";
 
 export function makeGithub(token, { owner, name }) {
-  async function gh(path, { method = "GET", body } = {}) {
+  async function gh(path, { method = "GET", body, accept } = {}) {
     const res = await fetch(API + path, {
       method,
       headers: {
-        accept: "application/vnd.github+json",
+        accept: accept || "application/vnd.github+json",
         "x-github-api-version": "2022-11-28",
         "user-agent": "github-overview",
         ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -48,6 +48,17 @@ export function makeGithub(token, { owner, name }) {
         htmlUrl: r.html_url,
         description: r.description || "",
       };
+    },
+    // 星标历史：带 star+json 才回 starred_at，据此算任意窗口的净增
+    async stargazers() {
+      const out = [];
+      for (let page = 1; page <= 10; page++) {
+        const rows = await gh(`${repoPath}/stargazers?per_page=100&page=${page}`, { accept: "application/vnd.github.star+json" });
+        if (!Array.isArray(rows) || !rows.length) break;
+        for (const r of rows) if (r.starred_at) out.push(String(r.starred_at).slice(0, 10));
+        if (rows.length < 100) break;
+      }
+      return out;
     },
     // traffic endpoints need push access, and only keep 14 rolling days
     async views() { return gh(`${repoPath}/traffic/views?per=day`); },

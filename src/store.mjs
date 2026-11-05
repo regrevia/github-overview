@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { STORE_PATH } from "./config.mjs";
 
 // GitHub traffic only keeps 14 rolling days, so every sync appends today's row.
-const emptySlice = () => ({ days: {}, npm: {}, releases: [], meta: {} });
+const emptySlice = () => ({ days: {}, npm: {}, releases: [], meta: {}, stars: [] });
 const emptyStore = () => ({ version: 2, repos: {} });
 
 export function loadStore(path = STORE_PATH) {
@@ -40,7 +40,16 @@ export function saveStore(store, path = STORE_PATH) {
 
 export function repoStore(store, key) {
   if (!store.repos[key]) store.repos[key] = emptySlice();
-  return store.repos[key];
+  const s = store.repos[key];
+  if (!Array.isArray(s.stars)) s.stars = [];
+  return s;
+}
+
+// 每次存全量星标日期（一天可多条），不 merge 也不去重：总数和窗口净增都数这份
+export function mergeStars(slice, dates) {
+  if (!Array.isArray(dates) || !dates.length) return slice;
+  slice.stars = dates.filter(Boolean).map((d) => String(d).slice(0, 10)).sort();
+  return slice;
 }
 
 export function hasRepo(store, key) {

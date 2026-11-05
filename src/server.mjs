@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { readConfig, writeConfig, resolveToken, parseRepo, normalizeConfig } from "./config.mjs";
 import { makeGithub } from "./github.mjs";
 import { makeNpm } from "./npm.mjs";
-import { loadStore, saveStore, repoStore, mergeTraffic, mergeNpm, series, storedDays } from "./store.mjs";
+import { loadStore, saveStore, repoStore, mergeTraffic, mergeNpm, mergeStars, series, storedDays } from "./store.mjs";
 import { aiSummary, askQuestion, readAiConfig, templateSummary } from "./summary.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,7 +34,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
 
   async function syncOne(t) {
     const s = repoStore(store, t.key);
-    const [views, clones, paths, referrers, repoInfo, releases, activity, alerts, openWork] = await Promise.all([
+    const [views, clones, paths, referrers, repoInfo, releases, activity, alerts, openWork, starDates] = await Promise.all([
       t.gh.views().catch(() => null),
       t.gh.clones().catch(() => null),
       t.gh.paths().catch(() => null),
@@ -44,8 +44,10 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
       t.gh.activity(new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10), self).catch(() => null),
       t.gh.alerts().catch(() => null),
       t.gh.openWork(self).catch(() => null),
+      t.gh.stargazers().catch(() => null),
     ]);
     if (views || clones) mergeTraffic(s, views, clones);
+    if (starDates) mergeStars(s, starDates);
     // 仓库名当包名只是默认猜测：先看 registry 的维护者，同名别人的包不算自己的下载
     let npmOk = true;
     if (!t.npmExplicit) {
@@ -141,6 +143,20 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
     saveStore(store);
     lastSync = new Date().toISOString();
     return { ok: results.every((r) => r.ok), syncedAt: lastSync, results };
+  }
+
+  // 星标净增跟着图表标的区间走：起止与 range 一致，不按请求天数报
+  function starGrowthOf(from, to, list) {
+    if (!from || !to) return null;
+    let delta = 0, seen = 0;
+    for (const s of list) {
+      const ds = s.stars || [];
+      if (!ds.length) continue;
+      seen++;
+      delta += ds.filter((d) => d >= from && d <= to).length;
+    }
+    const span = Math.round((Date.parse(to) - Date.parse(from)) / 864e5) + 1;
+    return seen ? { span, from, to, delta } : null;
   }
 
   // GitHub 只回 14 天去重访客，更长范围沿用这段窗口并说明覆盖天数
@@ -277,6 +293,13 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         },
         alerts: anyAlert ? alerts : null,
       },
+      starGrowth: starGrowthOf(
+        [rows.find((r) => r.v != null || r.u != null)?.d || "", slices.map(({ s }) => firstDay(s)).filter(Boolean).sort()[0] || ""]
+          .sort()
+          .at(-1) || null,
+        rows.at(-1)?.d || null,
+        slices.map(({ s }) => s),
+      ),
       updatedAt: lastSync,
     };
   }
@@ -357,6 +380,11 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         home: (meta.paths || []).filter((p) => p.p === "仓库主页").reduce((a, p) => a + (p.n || 0), 0) || null,
         npm: meta.npmWeek ?? null,
       },
+      starGrowth: starGrowthOf(
+        [rows.find((r) => r.v != null || r.u != null)?.d || "", firstDay(s) || ""].sort().at(-1) || null,
+        rows.at(-1)?.d || null,
+        [s],
+      ),
       referrers: meta.referrers || [],
       releases: s.releases || [],
       npmVersions: meta.npmVers || [],
@@ -424,12 +452,19 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
         const single = data.range.days === 1 ? data.series[0] : null;
         const ctx = {
           days: windowDays,
+          span: (() => {
+            const rowsAll = data.series || [];
+            const firstReal = rowsAll.find((r) => r.v != null || r.u != null);
+            const lastAny = rowsAll.at(-1);
+            return firstReal && lastAny ? Math.round((Date.parse(lastAny.d) - Date.parse(firstReal.d)) / 864e5) + 1 : null;
+          })(),
           day: single ? single.d : null,
           covered: data.range.covered,
           uniques: single ? single.u : data.totals.uniques,
           views: single ? single.v : winViews,
           external: data.contributions,
           stars: data.repo.stars,
+          starGrowth: data.starGrowth,
           npmWeek: data.totals.npmWeek,
           paths: data.paths,
           scope: key === ALL ? `你的 ${targets.length} 个仓库` : key,
@@ -532,6 +567,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
             funnel: data.funnel,
             impacts: data.impacts,
             stars: data.repo.stars,
+            starGrowth: data.starGrowth,
             npmWeek: data.totals.npmWeek,
             paths: data.paths,
             scope: key === ALL ? `你的 ${targets.length} 个仓库` : key,
@@ -555,6 +591,7 @@ export function createApp({ repo, repos, days = 7, cfg: cfgIn } = {}) {
                   issues: data.contributions.issues.length,
                   pulls: data.contributions.pulls.length,
                   stars: data.repo.stars,
+                  starGrowth: data.starGrowth,
                   npmWeek: data.totals.npmWeek,
                   impact: data.impact,
                   topPaths: data.paths.slice(0, 3),
