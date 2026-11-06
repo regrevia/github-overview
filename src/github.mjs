@@ -30,6 +30,20 @@ export function makeGithub(token, { owner, name }) {
 
   const repoPath = `/repos/${owner}/${name}`;
 
+  // 列表页不会一次给全：翻到不满页为止，最多 5 页（500 条）
+  async function listPages(path, stop) {
+    const out = [];
+    for (let page = 1; page <= 5; page++) {
+      const rows = await gh(`${path}${path.includes("?") ? "&" : "?"}page=${page}`).catch(() => null);
+      // 第一页就失败说明这次没拿到，交给调用方保留上一次快照，别写成空
+      if (!rows) return page === 1 ? null : out;
+      if (!rows.length) break;
+      out.push(...rows);
+      if (rows.length < 100 || (stop && stop(rows.at(-1)))) break;
+    }
+    return out;
+  }
+
   return {
     owner,
     name,
@@ -73,9 +87,10 @@ export function makeGithub(token, { owner, name }) {
   async openWork(selfLogins = []) {
     const self = new Set([owner.toLowerCase(), ...selfLogins.map((x) => String(x).toLowerCase())]);
     const [issueRows, pullRows] = await Promise.all([
-      gh(`${repoPath}/issues?state=open&per_page=100`).catch(() => null),
-      gh(`${repoPath}/pulls?state=open&per_page=100`).catch(() => null),
+      listPages(`${repoPath}/issues?state=open&per_page=100`),
+      listPages(`${repoPath}/pulls?state=open&per_page=100`),
     ]);
+    if (!issueRows || !pullRows) return null;
     const out = { issues: [], pulls: [], at: new Date().toISOString() };
     const norm = (it, comments) => {
       const author = it.user?.login || "ghost";
@@ -116,9 +131,10 @@ export function makeGithub(token, { owner, name }) {
         return author;
       };
       const [issueRows, pullRows] = await Promise.all([
-        gh(`${repoPath}/issues?state=all&since=${sinceIso}&per_page=100&sort=updated&direction=desc`).catch(() => []),
-        gh(`${repoPath}/pulls?state=all&sort=updated&direction=desc&per_page=100`).catch(() => []),
+        listPages(`${repoPath}/issues?state=all&since=${sinceIso}&per_page=100&sort=updated&direction=desc`),
+        listPages(`${repoPath}/pulls?state=all&sort=updated&direction=desc&per_page=100`, (last) => String(last.updated_at || last.created_at || "").slice(0, 10) < sinceIso),
       ]);
+      if (!issueRows || !pullRows) return null;
       for (const it of issueRows || []) {
         if (it.pull_request) continue;
         const author = byAuthor(it);

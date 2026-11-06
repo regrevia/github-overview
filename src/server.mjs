@@ -16,7 +16,7 @@ const ALL = "all";
 // 摘要别拖慢页面：先回模板，AI 结果进缓存下一次带出来
 const SUM_CACHE = new Map();
 
-export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn } = {}) {
+export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMinutes = 15, cfg: cfgIn } = {}) {
   const cfg = cfgIn || readConfig();
   const list = repos || normalizeConfig(cfg).repos || (repo ? [{ repo, npm: cfg.npm }] : []);
   if (!list.length) throw new Error("还没有配置仓库");
@@ -86,6 +86,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn
     if (alerts) s.meta.alerts = alerts;
     if (activity) s.meta.activity = activity;
     if (openWork) s.meta.openWork = openWork;
+    if (activity || openWork) s.meta.contribAt = new Date().toISOString();
     if (perVers) s.meta.npmVers = perVers;
     if (!npmOk) s.meta.npmVers = [];
     const merged = new Map((s.releases || []).map((r) => [r.tag, r]));
@@ -99,6 +100,48 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn
     s.meta.syncedAt = new Date().toISOString();
     s.meta.error = null;
     return { repo: t.key, ok: true };
+  }
+
+  // 贡献单独走高频通道：流量/star 是 6 小时一次，issue/PR 状态十几分钟就会变
+  async function refreshContrib(t) {
+    const s = repoStore(store, t.key);
+    const since = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+    const [activity, openWork] = await Promise.all([
+      t.gh.activity(since, self).catch(() => null),
+      t.gh.openWork(self).catch(() => null),
+    ]);
+    if (activity) s.meta.activity = activity;
+    if (openWork) s.meta.openWork = openWork;
+    if (activity || openWork) s.meta.contribAt = new Date().toISOString();
+    return { repo: t.key, ok: Boolean(activity || openWork) };
+  }
+
+  let contribPromise = null;
+  async function syncContribs() {
+    if (contribPromise) return contribPromise;
+    contribPromise = (async () => {
+      const results = new Array(targets.length);
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < targets.length) {
+          const idx = cursor++;
+          const t = targets[idx];
+          try {
+            results[idx] = await refreshContrib(t);
+          } catch (e) {
+            results[idx] = { repo: t.key, ok: false, error: String(e.message || e) };
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, targets.length) }, worker));
+      saveStore(store);
+      return { ok: results.every((r) => r.ok), at: new Date().toISOString(), results };
+    })();
+    try {
+      return await contribPromise;
+    } finally {
+      contribPromise = null;
+    }
   }
 
   let syncPromise = null;
@@ -254,13 +297,20 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn
         .map((t) => {
           const r = repoStore(store, t.key);
           const w = series(r, windowDays, r.npm || {});
+          const sg = starGrowthOf(
+            [w.find((x) => x.v != null || x.u != null)?.d || "", firstDay(r) || ""].sort().at(-1) || null,
+            w.at(-1)?.d || null,
+            [r],
+          );
           return {
             key: t.key,
             name: t.key.split("/")[1] || t.key,
             uniques: windowDays === 1 ? (w.at(-1)?.u ?? null) : (r.meta?.views?.uniques ?? null),
             views: w.reduce((a, x) => a + (x.v ?? 0), 0),
             npm: w.reduce((a, x) => a + (x.n ?? 0), 0),
+            npmWeek: r.meta?.npmWeek ?? null,
             stars: r.meta?.repo?.stars ?? null,
+            starDelta: sg ? sg.delta : null,
           };
         })
         .sort((a, b) => (b.uniques ?? 0) - (a.uniques ?? 0)),
@@ -297,6 +347,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn
           pulls: slices.flatMap(({ t, s }) => (s.meta?.openWork?.pulls || []).map((x) => ({ ...x, repo: t.key }))).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
         },
         alerts: anyAlert ? alerts : null,
+        at: slices.map(({ s }) => s.meta?.contribAt).filter(Boolean).sort().at(-1) || null,
       },
       starGrowth: starGrowthOf(
         [rows.find((r) => r.v != null || r.u != null)?.d || "", slices.map(({ s }) => firstDay(s)).filter(Boolean).sort()[0] || ""]
@@ -402,6 +453,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn
         pulls: (meta.activity?.pulls || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
         open: meta.openWork ? { issues: meta.openWork.issues || [], pulls: meta.openWork.pulls || [] } : null,
         alerts: meta.alerts || null,
+        at: meta.contribAt || null,
       },
       updatedAt: meta.syncedAt || lastSync,
     };
@@ -444,7 +496,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn
         return send(200, build(windowDays, url.searchParams.get("repo") || ALL));
       }
       if (url.pathname === "/api/progress") {
-        return send(200, { ...syncProgress, intervalHours });
+        return send(200, { ...syncProgress, intervalHours, contribMinutes });
       }
       if (url.pathname === "/api/sync" && req.method === "POST") {
         return send(200, await sync());
@@ -680,6 +732,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, cfg: cfgIn
   return {
     server,
     sync,
+    syncContribs,
     build,
     listen(port = 4317, host = "127.0.0.1") {
       return new Promise((resolve) => server.listen(port, host, () => resolve(server.address())));

@@ -85,6 +85,15 @@
   .kpi-value { font-size: 24px; font-weight: 600; letter-spacing: -.02em; line-height: 1.35; }
   .kpi-sub { font-size: 12px; color: var(--label-secondary); }
   .head-note { font-size: 12px; font-weight: 400; color: var(--label-secondary); margin-left: 6px; }
+  #sec-top { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-l1); }
+  .leaders { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 28px; padding: 14px 0 4px; }
+  .lead { min-width: 0; }
+  .lead-label { font-size: 12px; color: var(--label-secondary); }
+  .lead-name { font-size: 12px; color: var(--label-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lead-value { font-size: 24px; font-weight: 600; letter-spacing: -.02em; line-height: 1.35; font-variant-numeric: tabular-nums; }
+  .lead-sub { font-size: 12px; color: var(--label-secondary); }
+  .lead[data-key] { cursor: pointer; }
+  .lead[data-key]:hover .lead-name { color: var(--brand); }
   .up { color: var(--success); }
 
   .cols { display: grid; grid-template-columns: minmax(0, 1fr) 318px; min-width: 0; gap: 30px; margin-top: 20px; align-items: start; }
@@ -202,6 +211,7 @@
   }
   @media (max-width: 980px) {
     .kpis { grid-template-columns: repeat(2, 1fr); row-gap: 14px; }
+    .leaders { grid-template-columns: repeat(2, 1fr); gap: 14px 20px; }
     .kpi:nth-child(odd) { border-left: none; padding-left: 0; }
     .kpi:nth-child(even) { border-left: 1px solid var(--border-l1); padding-left: 14px; }
   }
@@ -286,6 +296,11 @@
     </div>
   </section>
 
+  <section class="sec" id="sec-top" hidden>
+    <div class="head"><h2>各仓之最<span class="head-note" id="top-note"></span></h2></div>
+    <div class="leaders" id="leaders"></div>
+  </section>
+
   <div class="cols">
     <main>
       <section class="sec">
@@ -311,7 +326,7 @@
       </section>
 
       <section class="sec">
-        <div class="head"><h2>贡献</h2><span class="src" id="contrib-range"></span></div>
+        <div class="head"><h2>贡献</h2><span class="src" id="contrib-range"></span><span class="head-note" id="contrib-fresh"></span></div>
         <div class="stats">
           <div><span>issue</span><b id="s-issues">—</b><em id="s-issues-sub"></em></div>
           <div><span>PR</span><b id="s-prs">—</b><em id="s-prs-sub"></em></div>
@@ -394,6 +409,7 @@
       <div class="panel">
         <h3>刷新<span id="r-interval">—</span></h3>
         <div class="rowline"><span>上次</span><b id="r-last">—</b></div>
+        <div class="rowline" id="r-contrib-row" hidden><span>贡献</span><b id="r-contrib">—</b></div>
         <div class="rowline"><span>已存</span><b id="r-days">8 天</b></div>
         <div class="rowline" style="margin-top:10px"><span>数据源</span><b>GitHub · npm</b></div>
       </div>
@@ -886,12 +902,69 @@ function renderImpact(it) {
 let OVERVIEW = [];
 let OV_SORT = "u";
 
+let TOP_SIG = "";
+function renderTop() {
+  const sec = document.getElementById("sec-top");
+  if (!sec) return;
+  const rows = OVERVIEW.filter((r) => r && r.key);
+  sec.hidden = !rows.length;
+  if (!rows.length) return;
+  const span = currentRange === 1 ? (DATA[DATA.length - 1]?.d || "") : `近 ${currentRange} 天`;
+  const sig = span + "|" + rows.map((r) => `${r.key}:${r.views}:${r.npm}:${r.npmWeek}:${r.uniques}:${r.starDelta}`).join(",");
+  if (sig === TOP_SIG) return;
+  TOP_SIG = sig;
+  document.getElementById("top-note").textContent = `· ${span}`;
+  const node = document.getElementById("leaders");
+  node.textContent = "";
+  const sum = (f) => rows.reduce((a, r) => a + (Number(f(r)) || 0), 0);
+  const metrics = [
+    { label: "浏览最多", k: "views", total: sum((r) => r.views), empty: "没有浏览" },
+    { label: "访客最多", k: "uniques", total: sum((r) => r.uniques), empty: "没有访客", note: currentRange === 1 ? "当天访客" : "14 天去重" },
+    { label: "涨星最多", k: "starDelta", total: sum((r) => r.starDelta), empty: "没有新增" },
+    { label: "下载最多", k: "npmWeek", total: sum((r) => r.npmWeek), empty: "没有下载", note: "周汇总" },
+  ];
+  for (const m of metrics) {
+    const best = [...rows].sort((a, b) => (b[m.k] ?? -1) - (a[m.k] ?? -1))[0];
+    const val = best?.[m.k];
+    const tile = document.createElement("div");
+    tile.className = "lead";
+    const label = document.createElement("div");
+    label.className = "lead-label";
+    label.textContent = m.label;
+    const name = document.createElement("div");
+    name.className = "lead-name";
+    const value = document.createElement("div");
+    value.className = "lead-value";
+    const sub = document.createElement("div");
+    sub.className = "lead-sub";
+    if (!best || !(val > 0)) {
+      name.textContent = "—";
+      value.textContent = "0";
+      sub.textContent = m.empty;
+    } else {
+      name.textContent = best.name;
+      name.title = best.key;
+      value.textContent = (m.k === "starDelta" ? "+" : "") + fmt(val);
+      const pct = m.total > 0 ? Math.round((val / m.total) * 100) : null;
+      const bits = [];
+      if (m.note) bits.push(m.note);
+      if (pct != null) bits.push(`占全部仓库 ${pct}%`);
+      sub.textContent = bits.join(" · ");
+      tile.dataset.key = best.key;
+      tile.title = `${best.key} · 点击查看`;
+      tile.addEventListener("click", () => switchRepo(best.key));
+    }
+    tile.append(label, name, value, sub);
+    node.appendChild(tile);
+  }
+}
+
 function drawOverview() {
   document.getElementById("sec-repos").hidden = !OVERVIEW.length;
   const node = document.getElementById("repo-list");
   node.textContent = "";
   if (!OVERVIEW.length) return;
-  const k = OV_SORT === "u" ? "uniques" : "npm";
+  const k = OV_SORT === "u" ? "uniques" : "npmWeek";
   const projNote = document.getElementById("proj-note");
   if (projNote) {
     const span = currentRange === 1 ? (DATA[DATA.length - 1]?.d || "") : "近 14 天";
@@ -1123,6 +1196,11 @@ function applyLive(json) {
   } else {
     prSub.textContent = "都已处理";
   }
+  const fresh = document.getElementById("contrib-fresh");
+  if (fresh) {
+    const d = c.at ? new Date(c.at) : null;
+    fresh.textContent = d && !Number.isNaN(d.getTime()) ? `· ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 更新` : "";
+  }
   const al = c.alerts;
   const opened = al ? ["dependabot", "codeScanning", "secretScanning"].filter(k => al[k]?.available) : [];
   const total = al ? opened.reduce((s, k) => s + (al[k].open || 0), 0) : null;
@@ -1131,6 +1209,7 @@ function applyLive(json) {
   renderFunnel(json.funnel);
   OVERVIEW = json.repos || [];
   drawOverview();
+  renderTop();
   const atype = { dependabot: "依赖漏洞", codeScanning: "代码扫描", secretScanning: "密钥泄漏" };
   const asub = document.getElementById("s-alerts-sub");
   const aval = document.getElementById("s-alerts");
@@ -1371,6 +1450,12 @@ async function loadInterval() {
     const st = await r.json();
     const el = document.getElementById("r-interval");
     if (el && st.intervalHours) el.textContent = `每 ${st.intervalHours} 小时`;
+    const row = document.getElementById("r-contrib-row");
+    const cb = document.getElementById("r-contrib");
+    if (row && cb && st.contribMinutes > 0) {
+      cb.textContent = `每 ${st.contribMinutes} 分钟`;
+      row.hidden = false;
+    }
   } catch { /* 拿不到就留着占位 */ }
 }
 

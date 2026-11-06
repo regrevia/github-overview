@@ -18,13 +18,14 @@ const port = Number(flag("--port", "-p") || process.env.PORT || 4317);
 const npmArg = flag("--npm");
 const days = Number(flag("--days") || 7);
 const intervalHours = Number(flag("--refresh") || 6);
+const contribMinutes = Number(flag("--contrib") || 15);
 
 function usage() {
   console.log(`github-overview
 
   github-overview init --user 用户名 [--npm 包名,...]
   github-overview init --repo owner/repo[,owner/repo2] [--npm 包名,...]
-  github-overview start [--port 4317] [--days 7] [--refresh 6]
+  github-overview start [--port 4317] [--days 7] [--refresh 6] [--contrib 15]
   github-overview sync
   github-overview config --apikey KEY --baseurl URL [--model deepseek-chat]
 `);
@@ -94,7 +95,7 @@ try {
   }
 
   if (cmd === "sync") {
-    const app = createApp({ repos, days, intervalHours, cfg });
+    const app = createApp({ repos, days, intervalHours, contribMinutes, cfg });
     const out = await app.sync();
     for (const r of out.results) console.log(`${r.ok ? "同步" : "失败"} ${r.repo}${r.error ? "：" + r.error : ""}`);
     console.log(`同步完成 ${out.syncedAt}`);
@@ -102,10 +103,17 @@ try {
   }
 
   if (cmd === "start") {
-    const app = createApp({ repos, days, intervalHours, cfg });
+    const app = createApp({ repos, days, intervalHours, contribMinutes, cfg });
     const addr = await app.listen(port);
     console.log(`github-overview 在 http://127.0.0.1:${addr.port}`);
     console.log(`已绑定 ${cfg.user}，${repos.length} 个仓库`);
+    const contribTick = async () => {
+      try {
+        await app.syncContribs();
+      } catch (e) {
+        console.log(`贡献刷新失败：${e.message}`);
+      }
+    };
     const tick = async () => {
       try {
         const out = await app.sync();
@@ -115,7 +123,10 @@ try {
         console.log(`同步失败：${e.message}`);
       }
     };
-    tick();
+    // 全量同步跑完再开高频通道，避免两边同时写同一份快照
+    tick().then(() => {
+      if (contribMinutes > 0) setInterval(contribTick, Math.max(3, contribMinutes) * 60e3);
+    });
     setInterval(tick, Math.max(1, intervalHours) * 3600e3);
     await new Promise(() => {});
   }
