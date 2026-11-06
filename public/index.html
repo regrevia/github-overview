@@ -655,7 +655,7 @@ function donut(node) {
   const rest = total - namedSum;
   // 路径合计可能已经超过浏览总数（GitHub 两个接口口径不严格相同），这时不再补「其他页面」，
   // 否则图例相加会超过 100%
-  parts = rest > 0 ? [...named, ["其他页面", rest, "--machine"]] : named;
+  parts = rest > 0 ? [...named, ["其他页面", rest, "--label-secondary"]] : named;
   const R = 40, ST = 13, CIRC = 2 * Math.PI * R;
   const svg = el("svg", { viewBox: "0 0 104 104", role: "img", "aria-label": "页面访问占比" });
   svg.appendChild(el("circle", { cx: 52, cy: 52, r: R, fill: "none", stroke: cs.getPropertyValue("--border-l1").trim(), "stroke-width": ST }));
@@ -1106,7 +1106,7 @@ function applyLive(json) {
     const rows = [...merged.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
     const rest = [...merged.values()].reduce((s, n) => s + n, 0) - rows.reduce((s, r) => s + r[1], 0);
     PATHS = rows.map(([k, n], i) => [k, n, i === 0 ? "--brand" : i === 1 ? "--machine" : "--event"]);
-    if (rest > 0) PATHS.push(["其他页面", rest, "--machine"]);
+    if (rest > 0) PATHS.push(["其他页面", rest, "--label-secondary"]);
   }
   if (Array.isArray(json.referrers) && json.referrers.length) {
     const refTotal = json.referrers.reduce((a, r) => a + r.n, 0);
