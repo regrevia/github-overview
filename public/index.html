@@ -1316,8 +1316,14 @@ async function loadRepos() {
     const data = await res.json();
     REPOS = data.repos || [];
     if (currentRepo !== "all" && !REPOS.some((r) => r.key === currentRepo)) {
-      // 链接里的仓名不完整时按后缀匹配，例如 ?repo=sandvault
-      const hit = REPOS.find((r) => r.key.endsWith("/" + currentRepo) || r.key === currentRepo);
+      // 解析口径跟后端 resolveKey 对齐：精确 → 忽略大小写 → 仓名唯一匹配
+      // 这样?repo=Envoy 和大小写/owner 写错的整名链接都能落到同一个仓，不会误退回全部仓库
+      const q = currentRepo.toLowerCase();
+      const nameOf = (k) => k.split("/")[1]?.toLowerCase() || "";
+      // 只传仓名的链接按仓名唯一匹配；带 owner 的链接必须整个 key 对上（忽略大小写）
+      const byName = currentRepo.includes("/") ? [] : REPOS.filter((r) => nameOf(r.key) === q);
+      const hit = REPOS.find((r) => r.key.toLowerCase() === q)
+        || (byName.length === 1 ? byName[0] : null);
       const asked = currentRepo;
       currentRepo = hit ? hit.key : "all";
       // 链接里的仓没绑定时把参数改掉：否则下次刷新又退回全部仓库，还看不出为什么
