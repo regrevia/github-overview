@@ -42,6 +42,8 @@ export function saveAiConfig({ apikey, baseurl, model }) {
 }
 
 const mmdd = (t) => (t ? String(t).slice(5, 10) : "");
+// 只校验千位以上/带千分位的数：小数字（3 个 PR）没几个能编错，4 位以上一错就是错一栏
+const bigNums = (s) => [...String(s || "").matchAll(/(?<![\d.,#])(\d{1,3}(?:,\d{3})+|\d{4,})(?![\d.,])/g)].map((m) => Number(m[1].replace(/,/g, "")));
 const detailLines = (external) => {
   const rows = [
     ...(external.pulls || []).slice(0, 4).map((p) => `PR #${p.number} ${p.author} ${p.merged ? "已合并" : p.state} ${p.comments ?? 0} 回`),
@@ -56,15 +58,16 @@ const factLines = (ctx) =>
     `访客是近 ${Math.min(ctx.covered || 14, 14)} 天的去重人数（GitHub 只给这个长度）：${ctx.uniques ?? "未知"} 人`,
     `图上的区间是 ${ctx.span ?? ctx.days} 天，区间内浏览 ${ctx.views ?? "未知"} 次；浏览比访客多，因为同一个人可以看多次`,
     `这两段的时间长度不同，写的时候分开说，不要合并成同一个「近 N 天」`,
+    `页面、来源、漏斗这几行只覆盖近 ${Math.min(ctx.covered || 14, 14)} 天，引用时必须带上「近 ${Math.min(ctx.covered || 14, 14)} 天」，不能当成图上 ${ctx.span ?? ctx.days} 天`,
     ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
     `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
     ...detailLines(ctx.external),
-    ...(ctx.funnel ? [`漏斗：浏览 ${ctx.funnel.views ?? "—"} → 仓库主页 ${ctx.funnel.home ?? "—"} → npm 下载 ${ctx.funnel.npm ?? "—"}`] : []),
+    ...(ctx.funnel ? [`漏斗（近 ${Math.min(ctx.covered || 14, 14)} 天）：浏览 ${ctx.funnel.views ?? "—"} → 仓库主页 ${ctx.funnel.home ?? "—"} → npm 下载 ${ctx.funnel.npm ?? "—"}`] : []),
     ...(ctx.impacts?.length ? [`各仓最近发版日均浏览：${ctx.impacts.slice(0, 6).map((i) => `${i.name} ${i.before?.views?.avg ?? "—"}→${i.after?.views?.avg ?? "—"}`).join("、")}`] : []),
     ...(ctx.impact ? [`最近发版 ${ctx.impact.name ? ctx.impact.name + " " : ""}${ctx.impact.version}（${mmdd(ctx.impact.at)}）：前 7 天日均浏览 ${ctx.impact.before.views?.avg ?? "—"}、下载 ${ctx.impact.before.npm?.avg ?? "—"}，后 7 天 ${ctx.impact.after.views?.avg ?? "—"}、${ctx.impact.after.npm?.avg ?? "—"}`] : []),
     `stars 合计 ${ctx.stars}（当前总数），近 ${ctx.starGrowth?.span ?? ctx.days} 天新增 ${ctx.starGrowth?.delta ?? "—"}，总数和新增要分开说，新增要带上这几天，新增恰好等于总数时只报一次`,
     `npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
-    `最热页面：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
+    `最热页面（近 ${Math.min(ctx.covered || 14, 14)} 天）：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
   ].join("\n");
 
 // AI 摘要只允许引用给定事实里的数字：对不上就退回模板，免得出现「个仓库」「约 1.2 万」这种错数
@@ -109,17 +112,22 @@ export async function askQuestion(ctx, question, tools = []) {
         "你是这个 GitHub 数据看板的助手。下面给了当前范围已有的数据，需要更多的就用工具查，然后再回答。" +
         "说清楚数字和结论，可以分析、比较、估算，估算要说明依据。" +
         "数据里没有的直说没有，不要编造。回答用纯文本，不用 markdown，控制在 3 句以内。" +
+        "数字只能引用上面事实和工具结果里出现过的原值，不要自己加总、换算或取整；日期和跨度也要和事实一致。" +
+        "事实里的「范围」就是问题限定的范围，不要换成别的范围来说。" +
         "访客数口径是去重真人，克隆另算，机器人流量和发布峰值已经排除在外部反馈之外。",
     },
     { role: "user", content: `${factLines(ctx)}\n\n问题：${question}` },
   ];
   const toolDefs = tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters || { type: "object", properties: {} } } }));
+  const toolText = [];
   const runTool = async (name, args) => {
     const t = tools.find((x) => x.name === name);
     if (!t) return "没有这个工具";
     try {
       const out = await t.run(args || {});
-      return typeof out === "string" ? out : JSON.stringify(out ?? null).slice(0, 900);
+      const full = typeof out === "string" ? out : JSON.stringify(out ?? null);
+      toolText.push(full);
+      return full.slice(0, 2600);
     } catch (e) {
       return "工具出错：" + String(e.message || e).slice(0, 120);
     }
@@ -154,6 +162,24 @@ export async function askQuestion(ctx, question, tools = []) {
       text = (again?.content || "").trim();
     }
     if (!text) return { source: "error", answer: "AI 回了空内容。" };
+    const allowed = new Set();
+    const eat = (str) => { for (const n of bigNums(str)) allowed.add(n); };
+    messages.forEach((m) => eat(String(m.content || "")));
+    toolText.forEach(eat);
+    eat(question);
+    const grounded = (t) => bigNums(t).every((n) => allowed.has(n));
+    if (!grounded(text)) {
+      const again = await call(messages.concat([
+        { role: "assistant", content: text },
+        { role: "user", content: "上面的数字里有事实中没出现过的。只引用事实里的原值，不要加总、换算或取整；没有的数字就说没有。重新回答，3 句以内。" },
+      ]), false).catch(() => null);
+      const t2 = (again?.content || "").trim();
+      if (t2 && grounded(t2)) text = t2;
+      else {
+        const lines = factLines(ctx).split("\n").filter((l) => !/这两段|外部明细|页面、来源/.test(l)).slice(0, 3);
+        return { source: "data", answer: `这轮回答的数字对不上，先按数据说：${lines.join("；")}。` };
+      }
+    }
     return { source: "ai", answer: text.replace(/\s+/g, " ").slice(0, 400) };
   } catch (e) {
     const slow = e?.name === "TimeoutError" || /abort|timeout/i.test(e?.message || "");

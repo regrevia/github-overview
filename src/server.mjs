@@ -459,6 +459,17 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     };
   }
 
+  // 未知 repo 不能悄悄退回全部仓库：那会把全站数字显示成一个仓的，看起来像这个仓的数据
+  function resolveKey(raw) {
+    const q = String(raw || "").trim();
+    if (!q || q === ALL) return ALL;
+    const hit = targets.find((x) => x.key.toLowerCase() === q.toLowerCase());
+    if (hit) return hit.key;
+    const tail = targets.filter((x) => x.key.toLowerCase().endsWith("/" + q.toLowerCase()));
+    return tail.length === 1 ? tail[0].key : null;
+  }
+  const noRepo = (key) => `没有绑定这个仓库：${key}。右上角切换范围，或在 config 里加上它。`;
+
   function build(windowDays, key = ALL) {
     if (key === ALL) return aggregate(windowDays);
     const t = targets.find((x) => x.key === key);
@@ -493,7 +504,10 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       }
       if (url.pathname === "/api/data") {
         const windowDays = Number(url.searchParams.get("days") || days);
-        return send(200, build(windowDays, url.searchParams.get("repo") || ALL));
+        const rawKey = url.searchParams.get("repo");
+        const key = resolveKey(rawKey);
+        if (key === null) return send(404, { error: noRepo(rawKey), repo: rawKey });
+        return send(200, build(windowDays, key));
       }
       if (url.pathname === "/api/progress") {
         return send(200, { ...syncProgress, intervalHours, contribMinutes });
@@ -503,7 +517,9 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       }
       if (url.pathname === "/api/summary") {
         const windowDays = Number(url.searchParams.get("days") || days);
-        const key = url.searchParams.get("repo") || ALL;
+        const rawKey = url.searchParams.get("repo");
+        const key = resolveKey(rawKey);
+        if (key === null) return send(404, { error: noRepo(rawKey) });
         const data = build(windowDays, key);
         const winViews = data.series.reduce((a, r) => a + (r.v ?? 0), 0);
         const single = data.range.days === 1 ? data.series[0] : null;
@@ -550,31 +566,37 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         const question = String(body.question || "").trim();
         if (!question) return send(400, { error: "缺少问题" });
         const windowDays = Number(body.days || days);
-        const key = body.repo || ALL;
+        const rawKey = body.repo;
+        const key = resolveKey(rawKey);
+        if (key === null) return send(200, { answer: noRepo(rawKey), source: "data" });
         const data = build(windowDays, key);
         const allData = key === ALL ? null : build(windowDays, ALL);
         // 「有没有没处理的」这类问题不该由模型凭窗口数据猜：窗口外的老 issue 会让它答「都处理了」。
         // 直接读实时清单，答案和链接都来自数据本身。
         if (/未处理|没处理|未回|没回|待处理|待办|没人回|没有回/i.test(question)) {
           const op = data.contributions?.open;
-          if (!op) return send(200, { answer: "还没同步到未处理清单，先刷新一次。", source: "data" });
+          const scope = key === ALL ? `全部 ${targets.length} 个仓库` : key;
+          if (!op) return send(200, { answer: `${scope}的未处理清单还没同步到，先刷新一次。`, source: "data" });
           const rows = [
             ...op.issues.map((x) => ({ ...x, kind: "issue" })),
             ...op.pulls.map((x) => ({ ...x, kind: "PR" })),
           ];
-          if (!rows.length) return send(200, { answer: `没有未处理的 issue 或 PR。`, source: "data" });
-          const pick = rows.slice(0, 5);
-          const nI = op.issues.length, nP = op.pulls.length;
-          const head = [nI ? `${nI} 个 issue 没人回` : "", nP ? `${nP} 个 PR 没合` : ""].filter(Boolean).join("，");
-          const links = pick.map((x) => ({
+          // 一个都别丢：没回的和没合的全都给出链接，不截断成「最新 5 个」
+          const links = rows.map((x) => ({
             label: `${(x.repo || "").split("/")[1] || "本仓"} #${x.number} ${x.kind}`,
             url: x.url,
           }));
-          return send(200, {
-            answer: `${head}。${rows.length > pick.length ? `下面是最新 ${pick.length} 个，还有 ${rows.length - pick.length} 个。` : ""}`,
-            links,
-            source: "data",
-          });
+          const head = [
+            op.issues.length ? `${op.issues.length} 个 issue 没人回` : "",
+            op.pulls.length ? `${op.pulls.length} 个 PR 没合` : "",
+          ].filter(Boolean).join("，");
+          if (!rows.length) {
+            // GitHub 的 open_issues_count 含 PR、也含已经回过话的老单，和这份「没人回」清单不是一个口径
+            const counter = Number(data.repo?.openIssues || 0);
+            const tail = counter ? `（GitHub 计数 ${counter} 个，含 PR 和回过话的老单）` : "";
+            return send(200, { answer: `${scope}：没有没人回的 issue，也没有没合的 PR${tail}。`, source: "data" });
+          }
+          return send(200, { answer: `${scope}：${head}。`, links, source: "data" });
         }
         // 排名类问题直接算，不花几十秒等模型：数据都在手里，答案和链接都准确。
         const num = (x) => Number(x || 0).toLocaleString("en-US");
@@ -591,36 +613,83 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           const rows = rankBy((d) => d.totals.views);
           if (!rows.length) return send(200, { answer: "这段时间还没有浏览记录。", source: "data" });
           const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)} 次浏览`).join("，");
-          return send(200, { answer: `近 ${windowDays} 天浏览最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
+          const own = key === ALL ? "" : `本仓近 ${windowDays} 天 ${num(data.totals.views)} 次浏览；全站`;
+          return send(200, { answer: `${own || "近 " + windowDays + " 天"}浏览最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         if (/访客最多|哪个(仓库|项目).*(访客|人数)/.test(question)) {
           const rows = rankBy((d) => d.totals.uniques);
           if (!rows.length) return send(200, { answer: "这段时间还没有访客记录。", source: "data" });
           const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)} 位访客`).join("，");
-          return send(200, { answer: `近 ${Math.min(data.range.covered || 14, 14)} 天访客最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
+          const own = key === ALL ? "" : `本仓 ${num(data.totals.uniques)} 位访客；全站`;
+          return send(200, { answer: `${own || "近 " + Math.min(data.range.covered || 14, 14) + " 天"}访客最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         if (/star|关注数|收藏/.test(question)) {
-          const rows = rankBy((d) => d.repo?.stars);
-          if (!rows.length) return send(200, { answer: "还没有 star 记录。", source: "data" });
-          // 问「多少新 star」不能只回「哪个仓最多」，先给窗口新增和当前总数
-          const sg = build(windowDays, ALL).starGrowth;
-          const totalStars = targets.reduce((a, t) => a + (repoStore(store, t.key).meta?.repo?.stars ?? 0), 0);
-          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)}`).join("，");
-          const head = `${sg ? `近 ${sg.span} 天新增 ${num(sg.delta)} 个 star，` : ""}当前共 ${num(totalStars)} 个`;
-          return send(200, { answer: `${head}；最多的是 ${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
+          const grown = /涨|增|新|多了|加/.test(question);
+          const askWho = /哪个|哪几个|最多|排行|谁/.test(question);
+          const sg = data.starGrowth;
+          const total = num(data.repo?.stars ?? 0);
+          const delta = sg && sg.delta != null ? `近 ${sg.span} 天 ${sg.delta > 0 ? "+" : ""}${num(sg.delta)} 个` : "";
+          // 面板已经选了某个仓，就先答这个仓，不拿全站排名冒充它
+          if (key !== ALL) {
+            return send(200, {
+              answer: `${key} 现在 ${total} 个 star${delta ? "，" + delta : ""}。`,
+              links: [{ label: key, url: `https://github.com/${key}` }],
+              source: "data",
+            });
+          }
+          if (askWho && grown) {
+            const rows = rankBy((d) => d.starGrowth?.delta ?? 0);
+            if (!rows.length) return send(200, { answer: `近 ${windowDays} 天没有仓库涨 star。`, source: "data" });
+            const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} +${num(r.v)}`).join("，");
+            return send(200, {
+              answer: `全站近 ${sg?.span ?? windowDays} 天新增 ${num(sg?.delta ?? 0)} 个 star，涨得最多：${body}。`,
+              links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })),
+              source: "data",
+            });
+          }
+          if (askWho) {
+            const rows = rankBy((d) => d.repo?.stars ?? 0);
+            if (!rows.length) return send(200, { answer: "还没有 star 记录。", source: "data" });
+            const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)}`).join("，");
+            return send(200, {
+              answer: `全站现在共 ${total} 个 star，总数最多：${body}。`,
+              links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })),
+              source: "data",
+            });
+          }
+          return send(200, { answer: `全站现在共 ${total} 个 star${delta ? "，" + delta : ""}。`, source: "data" });
         }
         if (/npm|下载/.test(question)) {
+          if (key !== ALL) {
+            const w = data.totals.npmWeek;
+            return send(200, {
+              answer: w ? `${key} 近 7 天 npm 下载 ${num(w)} 次。` : `${key} 没有关联 npm 包。`,
+              links: [{ label: key, url: `https://github.com/${key}` }],
+              source: "data",
+            });
+          }
           const rows = rankBy((d) => d.totals.npmWeek);
           if (!rows.length) return send(200, { answer: "没有关联 npm 的仓库。", source: "data" });
           const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} 周下载 ${num(r.v)}`).join("，");
-          return send(200, { answer: `npm 周下载最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
+          return send(200, { answer: `全站 npm 周下载最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         if (/发版|发布.*(效果|影响)|涨了多少/.test(question)) {
+          if (key !== ALL) {
+            const it = data.impact;
+            if (!it || it.before?.views?.avg == null) return send(200, { answer: `${key} 近期的发版还看不出效果。`, source: "data" });
+            const b = Math.round(it.before.views.avg * 10) / 10, a = Math.round((it.after?.views?.avg ?? 0) * 10) / 10;
+            const pct = it.delta?.views != null ? `${it.delta.views >= 0 ? "+" : ""}${Math.round(it.delta.views)}%` : "";
+            return send(200, {
+              answer: `${key} ${String(it.version).replace(/^v/i, "")} 发版前后，浏览日均 ${num(b)} → ${num(a)}${pct ? "（" + pct + "）" : ""}。`,
+              links: [{ label: key, url: `https://github.com/${key}` }],
+              source: "data",
+            });
+          }
           // 基线太小的仓，倍数只是噪声（0.3 → 12 也是 ×39），低于日均 5 次浏览的不参与排名
           const rows = rankBy((d) => ((d.impact?.before?.views?.avg ?? 0) >= 5 ? (d.impact?.delta?.views ?? 0) : 0));
           if (!rows.length) return send(200, { answer: "近期的发版还看不出效果。", source: "data" });
           const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ×${(1 + r.v / 100).toFixed(1)}`).join("，");
-          return send(200, { answer: `发版后浏览涨得最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
+          return send(200, { answer: `全站发版后浏览涨得最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         const topRepos = key === ALL ? null : targets
           .map((t) => ({ name: t.name, u: repoStore(store, t.key).meta?.views?.uniques ?? 0 }))
@@ -662,6 +731,9 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
                   views: data.totals.views,
                   issues: data.contributions.issues.length,
                   pulls: data.contributions.pulls.length,
+                  openIssues: data.contributions.open?.issues?.length ?? null,
+                  openPulls: data.contributions.open?.pulls?.length ?? null,
+                  contribAt: data.contributions.at || null,
                   stars: data.repo.stars,
                   starGrowth: data.starGrowth,
                   npmWeek: data.totals.npmWeek,
@@ -678,7 +750,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
               run: ({ days: d, repo }) => {
                 const dd = [7, 30, 90].includes(Number(d)) ? Number(d) : windowDays;
                 const k2 = repo && targets.some((t) => t.key === repo) ? repo : key;
-                return build(dd, k2).series.map((r) => `${r.d.slice(5)} ${r.v ?? 0}/${r.u ?? 0}`).join("，");
+                return build(dd, k2).series.map((r) => `${r.d.slice(5)} 浏览${r.v ?? 0} 访客${r.u ?? 0}`).join("，")
+                  + "（访客是当天去重人数，加起来会大于整段去重人数；最后一天常是当天，还没同步完，别当成下滑）";
               },
             },
             {
@@ -689,7 +762,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
                 const k2 = repo && targets.some((t) => t.key === repo) ? repo : key;
                 const d = build(windowDays, k2).contributions;
                 const pick = (x, kind) => ({ kind, n: x.number, title: x.title, by: x.author, state: x.merged ? "merged" : x.state, at: x.mergedAt || x.closedAt || x.createdAt, url: x.url });
-                return [...d.pulls.slice(0, 5).map((x) => pick(x, "PR")), ...d.issues.slice(0, 5).map((x) => pick(x, "issue"))];
+                const all = [...d.pulls.map((x) => pick(x, "PR")), ...d.issues.map((x) => pick(x, "issue"))];
+                return { total: all.length, open: { issues: d.open?.issues?.length ?? null, pulls: d.open?.pulls?.length ?? null }, items: all.slice(0, 30) };
               },
             },
             {

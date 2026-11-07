@@ -222,6 +222,7 @@
     .repo-wrap { min-width: 0; max-width: 100%; }
     .repo-wrap > .repo { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; order: -1; }
     .repo-wrap > .repo #repo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .repo-wrap > .repo-note { font-size: 12px; color: var(--label-secondary); white-space: nowrap; }
     .spacer { display: none; }
     .seg { margin-left: auto; }
     .kpi-value { font-size: 24px; }
@@ -252,6 +253,7 @@
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M6.5 3.5h6v6M12.5 3.5 5 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </a>
       <div class="repo-menu" id="repo-menu" hidden></div>
+      <span class="repo-note" id="repo-note" hidden></span>
     </div>
     <div class="spacer"></div>
     <div class="seg" id="seg">
@@ -353,11 +355,11 @@
       </section>
 
       <section class="sec" id="sec-funnel" hidden>
-        <div class="head"><h2>漏斗 · 近 14 天</h2></div>
+        <div class="head"><h2>漏斗 · 浏览近 14 天</h2></div>
         <div class="stats">
           <div><span>浏览</span><b id="f-views">—</b><em></em></div>
           <div><span>仓库主页</span><b id="f-home">—</b><em id="f-home-sub"></em></div>
-          <div><span>npm 下载</span><b id="f-npm">—</b><em id="f-npm-sub"></em></div>
+          <div><span>npm 周下载</span><b id="f-npm">—</b><em id="f-npm-sub"></em></div>
         </div>
       </section>
 
@@ -891,7 +893,12 @@ function renderImpact(it) {
   // 全局视图主卡不止一个仓，版本号前面要带仓名，不然不知道说的是谁
   document.getElementById("impact-ver").textContent = `${it.name ? it.name + " " : ""}${bareTag(it.version)} · ${String(it.at).slice(5)}${it.limited ? " · 数据不足" : ""}`;
   show("views", "impact-views", "impact-views-sub");
-  show("npm", "impact-npm", "impact-npm-sub");
+  // 这个仓没有 npm 包时整格不出现，别留一个「—」让人以为数据丢了
+  const npmCell = document.getElementById("impact-npm").parentElement;
+  const hasNpm = it.before?.npm?.avg != null || it.after?.npm?.avg != null;
+  // 用行内 display 而不是 hidden：.stats div 的 flex 会盖掉 [hidden]
+  if (npmCell) npmCell.style.display = hasNpm ? "" : "none";
+  if (hasNpm) show("npm", "impact-npm", "impact-npm-sub");
   const spanTxt = (o) => (o?.from && o?.to ? `${String(o.from).slice(5)} – ${String(o.to).slice(5)}` : null);
   const bSpan = spanTxt(it.before?.views), aSpan = spanTxt(it.after?.views);
   document.getElementById("impact-cover").textContent = bSpan && aSpan
@@ -1081,7 +1088,7 @@ function renderFunnel(f) {
   document.getElementById("f-home-sub").textContent = f.home == null ? "" : Math.round((f.home / f.views) * 100) + "% 浏览";
   document.getElementById("f-npm").textContent = f.npm == null ? "—" : fmt(f.npm);
   // npm 是周汇总，浏览是 14 天，跨窗口算倍数会误导，只给日均
-  document.getElementById("f-npm-sub").textContent = f.npm == null ? "" : `周汇总 · 日均 ${fmt(Math.round(f.npm / 7))} 次`;
+  document.getElementById("f-npm-sub").textContent = f.npm == null ? "" : `日均 ${fmt(Math.round(f.npm / 7))} 次`;
 }
 
 function applyLive(json) {
@@ -1149,33 +1156,36 @@ function applyLive(json) {
     : "";
   document.getElementById("k-forks").textContent = (gTxt ? gTxt + " · " : "") + (repo.forks ?? 0) + " forks" + (repo.fullName === "全部仓库" && repo.count ? " · " + repo.count + " 个仓" : "");
   const rels = (json.releases || []).filter(r => DATA.some(x => x.d === label(r.at)));
-  // 每仓最多取 100 条 release，长窗口里更早的会被挤掉；覆盖不满整窗时数字写成下限，并说明是哪几天
-  const relDays = rels.length
-    ? Math.round((Date.parse(label(rels[0].at)) - Date.parse(label(rels[rels.length - 1].at))) / 864e5) + 1
-    : 0;
-  const relFull = relDays >= (json.series || []).length;
-  document.getElementById("k-rel").textContent = relFull ? rels.length : rels.length + "+";
+  // 后端对发版列表有硬上限（全局 120、单仓 200）：只有真的取满上限，数字才是下限
+  const relCap = repo.fullName === "全部仓库" ? 120 : 200;
+  const relCapped = rels.length >= relCap;
+  document.getElementById("k-rel").textContent = relCapped ? rels.length + "+" : rels.length;
   document.getElementById("k-rel-sub").textContent = rels.length
     ? (repo.fullName === "全部仓库"
-      ? (relFull ? "最近 " + label(rels[0].at) : label(rels[rels.length - 1].at) + " → " + label(rels[0].at) + " · " + relDays + " 天")
-      : bareTag(rels[rels.length - 1].tag) + " → " + bareTag(rels[0].tag) + (relFull ? "" : " · " + relDays + " 天"))
+      ? (relCapped ? label(rels[rels.length - 1].at) + " → " + label(rels[0].at) : "最近 " + label(rels[0].at))
+      : bareTag(rels[rels.length - 1].tag) + " → " + bareTag(rels[0].tag))
     : "本窗口无发版";
   const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open" && !x.comments);
   document.getElementById("s-issues").textContent = ic + " 个";
   const issub = document.getElementById("s-issues-sub");
   issub.textContent = "";
+  // 一个都别藏：没有 hover 的触屏上 tooltip 等于不存在，每条都做成链接
+  const addLinks = (parent, rows) => {
+    rows.forEach((x, i) => {
+      if (i) parent.appendChild(document.createTextNode("、"));
+      const a = document.createElement("a");
+      a.href = x.url;
+      a.target = "_blank";
+      a.rel = "noreferrer";
+      a.textContent = `${(x.repo || "").split("/")[1] || ""} #${x.number}`.trim();
+      parent.appendChild(a);
+    });
+  };
   if (!pending.length) {
     issub.textContent = ic ? "都已回复" : "没有外部 issue";
   } else {
-    const one = pending[0];
-    const a = document.createElement("a");
-    a.href = one.url;
-    a.target = "_blank";
-    a.rel = "noreferrer";
-    a.textContent = `${one.repo ? one.repo.split("/")[1] : ""} #${one.number}`.trim();
-    issub.textContent = `${pending.length} 个没回：`;
-    issub.appendChild(a);
-    if (pending.length > 1) issub.title = pending.slice(1, 6).map((x) => `${(x.repo || "").split("/")[1] || ""} #${x.number}`).join("\n");
+    issub.textContent = (ic ? "" : "窗口内没有新的；") + (pending.length === 1 ? "没回：" : `没回 ${pending.length} 个：`);
+    addLinks(issub, pending);
   }
   document.getElementById("s-prs").textContent = pc + " 个";
   const prSub = document.getElementById("s-prs-sub");
@@ -1183,15 +1193,9 @@ function applyLive(json) {
   const openPrs = c.open ? c.open.pulls : c.pulls.filter((x) => !x.merged);
   prSub.textContent = "";
   if (openPrs.length) {
-    const one = openPrs[0];
-    prSub.textContent = (prMerged ? `已合并 ${prMerged} 个 · ` : "") + (openPrs.length > 1 ? `待合 ${openPrs.length} 个：` : "待合 ");
-    if (openPrs.length > 1) prSub.title = openPrs.slice(1, 6).map((x) => `${(x.repo || "").split("/")[1] || ""} #${x.number}`).join("\n");
-    const a = document.createElement("a");
-    a.href = one.url;
-    a.target = "_blank";
-    a.rel = "noreferrer";
-    a.textContent = `${one.repo ? one.repo.split("/")[1] : ""} #${one.number}`.trim();
-    prSub.appendChild(a);
+    prSub.textContent = (prMerged ? `已合并 ${prMerged} 个 · ` : "") + (pc ? "" : "窗口内没有新的；")
+      + (openPrs.length === 1 ? "待合：" : `待合 ${openPrs.length} 个：`);
+    addLinks(prSub, openPrs);
   } else if (!pc) {
     prSub.textContent = "没有外部 PR";
   } else {
@@ -1307,7 +1311,13 @@ async function loadRepos() {
     if (currentRepo !== "all" && !REPOS.some((r) => r.key === currentRepo)) {
       // 链接里的仓名不完整时按后缀匹配，例如 ?repo=sandvault
       const hit = REPOS.find((r) => r.key.endsWith("/" + currentRepo) || r.key === currentRepo);
+      const asked = currentRepo;
       currentRepo = hit ? hit.key : "all";
+      // 链接里的仓没绑定时把参数改掉：否则下次刷新又退回全部仓库，还看不出为什么
+      const u = new URL(location.href);
+      if (hit) u.searchParams.set("repo", hit.key);
+      else { u.searchParams.delete("repo"); stickyNote = true; repoNote("没有绑定 " + asked + "，已切回全部仓库"); }
+      history.replaceState(null, "", u);
     }
     paintRepos();
     const cur = REPOS.find((r) => r.key === currentRepo);
@@ -1325,6 +1335,7 @@ PICK.addEventListener("click", (e) => {
 });
 
 function switchRepo(key) {
+  stickyNote = false;
   currentRepo = key;
   paintRepos();
   const cur = REPOS.find((r) => r.key === key);
@@ -1345,18 +1356,50 @@ MENU.addEventListener("click", (e) => {
 
 document.addEventListener("click", () => closeMenu());
 
+let PULL_SEQ = 0;
+// 「这个仓没绑定」这类要一直留着，直到用户自己换仓；网络抖动的提示下次拉通就清
+let stickyNote = false;
+function repoNote(txt) {
+  const el = document.getElementById("repo-note");
+  if (!el) return;
+  el.textContent = txt || "";
+  el.hidden = !txt;
+}
 async function pull(days, force, quiet) {
+  const seq = ++PULL_SEQ;
+  const want = currentRepo;
   try {
-    const res = await fetch("/api/data?days=" + days + "&repo=" + encodeURIComponent(currentRepo), { cache: "no-store" });
+    const res = await fetch("/api/data?days=" + days + "&repo=" + encodeURIComponent(want), { cache: "no-store" });
+    if (res.status === 404) {
+      // ?repo= 指向没绑定的仓：退回全部仓库重拉，别把上一个仓的数字留在屏上
+      const info = await res.json().catch(() => ({}));
+      if (seq !== PULL_SEQ) return null;
+      currentRepo = "all";
+      const u = new URL(location.href);
+      u.searchParams.delete("repo");
+      history.replaceState(null, "", u);
+      document.getElementById("repo-name").textContent = "全部仓库";
+      document.getElementById("repo-owner").textContent = "";
+      setRepoLink(null);
+      paintRepos();
+      stickyNote = true;
+      repoNote(info.error || "这个仓库不在监控列表，已切回全部仓库");
+      return pull(days, true, quiet);
+    }
     if (!res.ok) throw new Error(res.status);
     const json = await res.json();
-    if (json.repo && !json.repo.stars && !force) { /* 未同步过也照常渲染 */ }
+    // 连点切仓时慢的那次不许盖掉新仓：只认最后一次请求
+    if (seq !== PULL_SEQ) return null;
+    if (!stickyNote) repoNote("");
     applyLive(json);
     if (!(days === LIVE.range.days)) LIVE.range.days = days;
     render(days);
     if (!quiet) loadSummary(days);
     return json;
   } catch (e) {
+    if (seq !== PULL_SEQ) return null;
+    // 拉不到就明说屏上是旧数据，别让旧仓数字看起来像新仓的
+    repoNote("没连上服务，屏上还是上一次的数据");
     render(days);
     return null;
   }
