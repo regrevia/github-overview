@@ -614,7 +614,9 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           const rows = rankBy((d) => d.totals.views);
           if (!rows.length) return send(200, { answer: "这段时间还没有浏览记录。", source: "data" });
           const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)} 次浏览`).join("，");
-          const own = key === ALL ? "" : `本仓近 ${windowDays} 天 ${num(data.totals.views)} 次浏览；全站`;
+          const cov = data.range.covered || windowDays;
+          const spanTxt = cov < windowDays ? `${cov} 天（图上选了 ${windowDays} 天，其余没数据）` : `${windowDays} 天`;
+          const own = key === ALL ? "" : `本仓近 ${spanTxt} ${num(data.totals.views)} 次浏览；全站`;
           return send(200, { answer: `${own || "近 " + windowDays + " 天"}浏览最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         if (/访客最多|哪个(仓库|项目).*(访客|人数)/.test(question)) {
@@ -640,7 +642,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           }
           if (askWho && grown) {
             const rows = rankBy((d) => d.starGrowth?.delta ?? 0);
-            if (!rows.length) return send(200, { answer: `近 ${windowDays} 天没有仓库涨 star。`, source: "data" });
+            if (!rows.length) return send(200, { answer: `近 ${windowDays} 天没有仓库涨 star（有 star 记录的只有 ${data.range.covered || windowDays} 天）。`, source: "data" });
             const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} +${num(r.v)}`).join("，");
             return send(200, {
               answer: `全站近 ${sg?.span ?? windowDays} 天新增 ${num(sg?.delta ?? 0)} 个 star，涨得最多：${body}。`,

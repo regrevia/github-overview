@@ -19,7 +19,8 @@ export function templateSummary(ctx) {
       : `${span} 天 ${n(views)} 次浏览${uniques ? `；访客 ${n(uniques)} 是近 ${ud} 天去重的人数` : ""}。`);
   }
   const ic = external.issues.length, pc = external.pulls.length;
-  lines.push(ic || pc ? `外部提了 ${ic} 个 issue、${pc} 个 PR。` : `这段时间没有外部 issue 或 PR。`);
+  // 外部 issue/PR 是区间内新开的，标上网关时长，免得被读成全时段
+  lines.push(ic || pc ? `近 ${dataSpan(ctx)} 天外部提了 ${ic} 个 issue、${pc} 个 PR。` : `近 ${dataSpan(ctx)} 天没有外部 issue 或 PR。`);
   const sg = ctx.starGrowth;
   // 「同期」读者没法对上跨度，直接写清楚是当天还是近几天
   // 一天窗口写实际日期，不写「当天」，否则和 KPI 上的日期对不上
@@ -52,15 +53,20 @@ const detailLines = (external) => {
   return rows.length ? [`外部明细：${rows.join("；")}`] : [];
 };
 
+// 实际有数据的日历跨度；covered 是「有访客去重值的天数」，缺一天会少 1，别用它当跨度
+const dataSpan = (ctx) => Math.max(1, ctx.span ?? Math.min(ctx.days ?? 1, ctx.covered || ctx.days || 1));
+
 const factLines = (ctx) =>
   [
     `范围：${ctx.scope || "本仓库"}。issue/PR/发版按图上 ${ctx.span ?? ctx.days} 天`,
     `访客是近 ${Math.min(ctx.covered || 14, 14)} 天的去重人数（GitHub 只给这个长度）：${ctx.uniques ?? "未知"} 人`,
-    `图上的区间是 ${ctx.span ?? ctx.days} 天，区间内浏览 ${ctx.views ?? "未知"} 次；浏览比访客多，因为同一个人可以看多次`,
+    ...(dataSpan(ctx) < (ctx.span ?? ctx.days)
+      ? [`图上选了 ${ctx.span ?? ctx.days} 天，但只有 ${dataSpan(ctx)} 天有数据；浏览 ${ctx.views ?? "未知"} 次、issue/PR 都只算这 ${dataSpan(ctx)} 天，不能说成近 ${ctx.span ?? ctx.days} 天`]
+      : [`图上的区间是 ${ctx.span ?? ctx.days} 天，区间内浏览 ${ctx.views ?? "未知"} 次；浏览比访客多，因为同一个人可以看多次`]),
     `这两段的时间长度不同，写的时候分开说，不要合并成同一个「近 N 天」`,
     `页面、来源、漏斗这几行只覆盖近 ${Math.min(ctx.covered || 14, 14)} 天，引用时必须带上「近 ${Math.min(ctx.covered || 14, 14)} 天」，不能当成图上 ${ctx.span ?? ctx.days} 天`,
     ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
-    `外部 issue ${ctx.external.issues.length} 个，外部 PR ${ctx.external.pulls.length} 个`,
+    `近 ${dataSpan(ctx)} 天里外部 issue ${ctx.external.issues.length} 个、PR ${ctx.external.pulls.length} 个（只是这段时间新开的，不是全部）`,
     ...detailLines(ctx.external),
     ...(ctx.funnel ? [`漏斗（近 ${Math.min(ctx.covered || 14, 14)} 天）：浏览 ${ctx.funnel.views ?? "—"} → 仓库主页 ${ctx.funnel.home ?? "—"} → npm 下载 ${ctx.funnel.npm ?? "—"}`] : []),
     ...(ctx.impacts?.length ? [`各仓最近发版日均浏览：${ctx.impacts.slice(0, 6).map((i) => `${i.name} ${i.before?.views?.avg ?? "—"}→${i.after?.views?.avg ?? "—"}`).join("、")}`] : []),
