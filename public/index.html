@@ -1163,7 +1163,7 @@ function applyLive(json) {
   document.getElementById("k-rel-sub").textContent = rels.length
     ? (repo.fullName === "全部仓库"
       ? (relCapped ? label(rels[rels.length - 1].at) + " → " + label(rels[0].at) : "最近 " + label(rels[0].at))
-      : bareTag(rels[rels.length - 1].tag) + " → " + bareTag(rels[0].tag))
+      : (() => { const first = bareTag(rels[rels.length - 1].tag), last = bareTag(rels[0].tag); return first === last ? last : first + " → " + last; })())
     : "本窗口无发版";
   const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open" && !x.comments);
   document.getElementById("s-issues").textContent = ic + " 个";
@@ -1182,9 +1182,11 @@ function applyLive(json) {
     });
   };
   if (!pending.length) {
-    issub.textContent = ic ? "都已回复" : "没有外部 issue";
+    // 没有还开着的，不等于「都回复过」：关掉的也可能是没人理的
+    issub.textContent = ic ? `窗口内 ${ic} 个都已关闭` : "没有外部 issue";
   } else {
-    issub.textContent = (ic ? "" : "窗口内没有新的；") + (pending.length === 1 ? "没回：" : `没回 ${pending.length} 个：`);
+    const replied = pending.some((x) => (x.comments ?? 0) > 0);
+    issub.textContent = (ic ? "" : "窗口内没有新的；") + (pending.length === 1 ? (replied ? "还开着：" : "没回：") : `${replied ? "还开着" : "没回"} ${pending.length} 个：`);
     addLinks(issub, pending);
   }
   document.getElementById("s-prs").textContent = pc + " 个";
@@ -1199,7 +1201,7 @@ function applyLive(json) {
   } else if (!pc) {
     prSub.textContent = "没有外部 PR";
   } else {
-    prSub.textContent = "都已处理";
+    prSub.textContent = `窗口内 ${pc} 个都已处理`;
   }
   const fresh = document.getElementById("contrib-fresh");
   if (fresh) {

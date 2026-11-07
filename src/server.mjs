@@ -474,6 +474,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
   function build(windowDays, key = ALL) {
     if (key === ALL) return aggregate(windowDays);
     const t = targets.find((x) => x.key === key);
+    // 只接受已解析的 key：未绑定的仓库不能悄悄落到全站数据上
+    if (!t) throw new Error("没有绑定这个仓库：" + key);
     return t ? buildRepo(windowDays, t) : aggregate(windowDays);
   }
 
