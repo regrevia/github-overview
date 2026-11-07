@@ -287,9 +287,10 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       range: { days: windowDays, from: rows[0]?.d, to: rows.at(-1)?.d, storedDays: Math.max(...slices.map(({ s }) => storedDays(s)), 0), covered: Math.max(...slices.map(({ s }) => coveredDays(s)), 0), first: slices.map(({ s }) => firstDay(s)).filter(Boolean).sort()[0] || null },
       series: rows,
       totals: {
-        views: sumOf((s) => s.meta?.views?.total),
+        // 这些是按区间加出来的；views.total 是每仓 14 天的量，当窗口用会把 7 天说成 19 天
+        views: sumOf((s) => series(s, windowDays, s.npm || {}).reduce((a, x) => a + (x.v ?? 0), 0)),
         uniques: sumOf((s) => s.meta?.views?.uniques),
-        clones: sumOf((s) => s.meta?.clones?.total),
+        clones: sumOf((s) => series(s, windowDays, s.npm || {}).reduce((a, x) => a + (x.c ?? 0), 0)),
         cloneUniques: sumOf((s) => s.meta?.clones?.uniques),
         npmWeek: sumOf((s) => s.meta?.npmWeek),
       },
@@ -424,9 +425,9 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       range: { days: windowDays, from: rows[0]?.d, to: rows.at(-1)?.d, storedDays: storedDays(s), covered: coveredDays(s), first: firstDay(s) },
       series: rows,
       totals: {
-        views: views.total ?? null,
+        views: rows.reduce((a, x) => a + (x.v ?? 0), 0),
         uniques: views.uniques ?? null,
-        clones: clones.total ?? null,
+        clones: rows.reduce((a, x) => a + (x.c ?? 0), 0),
         cloneUniques: clones.uniques ?? null,
         npmWeek: meta.npmWeek ?? null,
       },
@@ -688,7 +689,14 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           // 基线太小的仓，倍数只是噪声（0.3 → 12 也是 ×39），低于日均 5 次浏览的不参与排名
           const rows = rankBy((d) => ((d.impact?.before?.views?.avg ?? 0) >= 5 ? (d.impact?.delta?.views ?? 0) : 0));
           if (!rows.length) return send(200, { answer: "近期的发版还看不出效果。", source: "data" });
-          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ×${(1 + r.v / 100).toFixed(1)}`).join("，");
+          const body = rows
+            .map((r, i) => {
+              const im = data.impacts.find((x) => x.key === r.key);
+              const b = im?.before?.views?.avg, a = im?.after?.views?.avg;
+              const pair = b != null && a != null ? ` ${num(Math.round(b * 10) / 10)} → ${num(Math.round(a * 10) / 10)}` : "";
+              return `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name}${pair}`;
+            })
+            .join("，");
           return send(200, { answer: `全站发版后浏览涨得最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         const topRepos = key === ALL ? null : targets
