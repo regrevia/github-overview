@@ -620,7 +620,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         const allData = key === ALL ? null : build(windowDays, ALL);
         // 「有没有没处理的」这类问题不该由模型凭窗口数据猜：窗口外的老 issue 会让它答「都处理了」。
         // 直接读实时清单，答案和链接都来自数据本身。
-        if (/未处理|没处理|未回|没回|待处理|待办|没人回|没有回/i.test(question)) {
+        if (/未处理|没处理|未回|没回|待处理|待办|没人回|没有回|没合|未合并|没合并/i.test(question)) {
           const op = data.contributions?.open;
           const scope = key === ALL ? `全部 ${targets.length} 个仓库` : key;
           if (!op) return send(200, { answer: `${scope}的未处理清单还没同步到，先刷新一次。`, source: "data" });
@@ -634,6 +634,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
             url: x.url,
           }));
           const noReply = op.issues.filter((x) => !((x.comments || 0) > 0)).length;
+          // 两侧都写出来：问 PR 的时候不能只回 issue 的数
           const head = [
             op.issues.length
               ? (noReply === op.issues.length
@@ -641,9 +642,9 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
                 : (noReply === 0
                   ? `${op.issues.length} 个 issue 还开着（都有回复）`
                   : `${op.issues.length} 个 issue 还开着（${noReply} 个没人回）`))
-              : "",
-            op.pulls.length ? `${op.pulls.length} 个 PR 没合` : "",
-          ].filter(Boolean).join("，");
+              : "没有还开着的 issue",
+            op.pulls.length ? `${op.pulls.length} 个 PR 没合` : "没有没合的 PR",
+          ].join("，");
           if (!rows.length) {
             // GitHub 的 open_issues_count 含 PR、也含已经回过话的老单，和这份「没人回」清单不是一个口径
             const counter = Number(data.repo?.openIssues || 0);
@@ -833,7 +834,17 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
                 const d = build(windowDays, k2).contributions;
                 const pick = (x, kind) => ({ kind, n: x.number, title: x.title, by: x.author, state: x.merged ? "merged" : x.state, at: x.mergedAt || x.closedAt || x.createdAt, url: x.url });
                 const all = [...d.pulls.map((x) => pick(x, "PR")), ...d.issues.map((x) => pick(x, "issue"))];
-                return { total: all.length, open: { issues: d.open?.issues?.length ?? null, pulls: d.open?.pulls?.length ?? null }, items: all.slice(0, 30) };
+                // 还开着/没合的单子可能落在窗口外，明细里必须带上，不然模型只能报个数
+                const openItems = [
+                  ...(d.open?.pulls || []).map((x) => ({ ...pick(x, "PR"), repo: x.repo, comments: x.comments ?? 0 })),
+                  ...(d.open?.issues || []).map((x) => ({ ...pick(x, "issue"), repo: x.repo, comments: x.comments ?? 0 })),
+                ];
+                return {
+                  total: all.length,
+                  open: { issues: d.open?.issues?.length ?? null, pulls: d.open?.pulls?.length ?? null },
+                  openItems: openItems.slice(0, 30),
+                  items: all.slice(0, 30),
+                };
               },
             },
             {
