@@ -223,6 +223,10 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
 
   function aggregate(windowDays) {
     const slices = targets.map((t) => ({ t, s: repoStore(store, t.key) }));
+    const sum14 = () => {
+      const ds = last14Days(rows.at(-1)?.d);
+      return ds.length ? slices.reduce((acc, { s }) => acc + ds.reduce((b, d) => b + (s.days?.[d]?.v ?? 0), 0), 0) : null;
+    };
     const allSeries = slices.map(({ s }) => series(s, windowDays, s.npm || {}));
     const rows = [];
     for (let i = 0; i < windowDays; i++) {
@@ -315,8 +319,10 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           };
         })
         .sort((a, b) => (b.uniques ?? 0) - (a.uniques ?? 0)),
+      // 漏斗的浏览用「同一段 14 天的逐日和」，别混用 meta 里的接口总数：
+      // 两者口径差几次，同时上屏就成两个数
       funnel: {
-        views: sumOf((s) => s.meta?.views?.total),
+        views: sum14(),
         home: [...paths.values()].filter((p) => p.p === "仓库主页").reduce((a, p) => a + p.n, 0) || null,
         npm: sumOf((s) => s.meta?.npmWeek),
       },
@@ -417,6 +423,10 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
   function buildRepo(windowDays, t) {
     const s = repoStore(store, t.key);
     const rows = series(s, windowDays, s.npm || {});
+    const sum14 = () => {
+      const ds = last14Days(rows.at(-1)?.d);
+      return ds.length ? ds.reduce((b, d) => b + (s.days?.[d]?.v ?? 0), 0) : null;
+    };
     const meta = s.meta || {};
     const views = meta.views || {};
     const clones = meta.clones || {};
@@ -433,7 +443,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       },
       paths: meta.paths || [],
       funnel: {
-        views: views.total ?? null,
+        views: sum14(),
         home: (meta.paths || []).filter((p) => p.p === "仓库主页").reduce((a, p) => a + (p.n || 0), 0) || null,
         npm: meta.npmWeek ?? null,
       },
@@ -470,6 +480,14 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     return tail.length === 1 ? tail[0].key : null;
   }
   const noRepo = (key) => `没有绑定这个仓库：${key}。右上角切换范围，或在 config 里加上它。`;
+  // 以当前窗口最后一天为终点、往前 14 个日历日的逐日浏览和
+  const last14Days = (endD) => {
+    if (!endD) return [];
+    const end = Date.parse(endD + "T00:00:00Z");
+    const out = [];
+    for (let i = 13; i >= 0; i--) out.push(new Date(end - i * 864e5).toISOString().slice(0, 10));
+    return out;
+  };
 
   function build(windowDays, key = ALL) {
     if (key === ALL) return aggregate(windowDays);
