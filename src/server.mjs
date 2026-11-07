@@ -223,13 +223,36 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
 
   function aggregate(windowDays) {
     const slices = targets.map((t) => ({ t, s: repoStore(store, t.key) }));
+    // 漏斗固定「最近 14 个完整日」：跟随窗口末行会让今天那行 0 参与、切范围时数字还会变
+    const funnelEnd = () => {
+      const t = new Date();
+      t.setUTCHours(0, 0, 0, 0);
+      t.setUTCDate(t.getUTCDate() - 1);
+      return t.toISOString().slice(0, 10);
+    };
     const sum14 = () => {
-      const ds = last14Days(rows.at(-1)?.d);
+      const ds = last14Days(funnelEnd());
       return ds.length ? slices.reduce((acc, { s }) => acc + ds.reduce((b, d) => b + (s.days?.[d]?.v ?? 0), 0), 0) : null;
     };
     const allSeries = slices.map(({ s }) => series(s, windowDays, s.npm || {}));
     const rows = [];
-    for (let i = 0; i < windowDays; i++) {
+    if (windowDays === 1) {
+      // 1 天窗口必须落在同一个日历日上：各仓自己的「最近一天」可能不同，
+      // 按位置相加会把 11-06 的数写进 11-05 那行
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const pick = (back) => new Date(today.getTime() - back * 864e5).toISOString().slice(0, 10);
+      let k = pick(1);
+      if (!slices.some(({ s }) => s.days?.[k])) k = pick(2);
+      const cell = { d: k, v: null, u: null, c: null, cu: null, n: null };
+      for (const { s } of slices) {
+        const row = s.days?.[k];
+        if (!row) continue;
+        for (const kk of ["v", "u", "c", "cu", "n"]) if (row[kk] != null) cell[kk] = (cell[kk] ?? 0) + row[kk];
+      }
+      rows.push(cell);
+    }
+    for (let i = 0; i < windowDays && windowDays > 1; i++) {
       const cell = { d: allSeries[0]?.[i]?.d, v: null, u: null, c: null, cu: null, n: null };
       for (const sr of allSeries) {
         const r = sr[i];
@@ -292,9 +315,10 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       series: rows,
       totals: {
         // 这些是按区间加出来的；views.total 是每仓 14 天的量，当窗口用会把 7 天说成 19 天
-        views: sumOf((s) => series(s, windowDays, s.npm || {}).reduce((a, x) => a + (x.v ?? 0), 0)),
+        // 和 series 行同源，1 天窗口才不会拿各仓不同的「最近一天」去加
+        views: rows.reduce((a, x) => a + (x.v ?? 0), 0),
         uniques: sumOf((s) => s.meta?.views?.uniques),
-        clones: sumOf((s) => series(s, windowDays, s.npm || {}).reduce((a, x) => a + (x.c ?? 0), 0)),
+        clones: rows.reduce((a, x) => a + (x.c ?? 0), 0),
         cloneUniques: sumOf((s) => s.meta?.clones?.uniques),
         npmWeek: sumOf((s) => s.meta?.npmWeek),
       },
@@ -423,8 +447,12 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
   function buildRepo(windowDays, t) {
     const s = repoStore(store, t.key);
     const rows = series(s, windowDays, s.npm || {});
+    // 同全站：固定按「最近 14 个完整日」，不跟窗口末行走
     const sum14 = () => {
-      const ds = last14Days(rows.at(-1)?.d);
+      const t = new Date();
+      t.setUTCHours(0, 0, 0, 0);
+      t.setUTCDate(t.getUTCDate() - 1);
+      const ds = last14Days(t.toISOString().slice(0, 10));
       return ds.length ? ds.reduce((b, d) => b + (s.days?.[d]?.v ?? 0), 0) : null;
     };
     const meta = s.meta || {};
