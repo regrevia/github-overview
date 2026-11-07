@@ -1170,7 +1170,7 @@ function applyLive(json) {
       ? (relCapped ? label(rels[rels.length - 1].at) + " → " + label(rels[0].at) : "最近 " + label(rels[0].at))
       : (() => { const first = bareTag(rels[rels.length - 1].tag), last = bareTag(rels[0].tag); return first === last ? last : first + " → " + last; })())
     : "本窗口无发版";
-  const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open" && !x.comments);
+  const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open");
   document.getElementById("s-issues").textContent = ic + " 个";
   const issub = document.getElementById("s-issues-sub");
   issub.textContent = "";

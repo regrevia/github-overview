@@ -633,15 +633,22 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
             label: `${(x.repo || "").split("/")[1] || "本仓"} #${x.number} ${x.kind}`,
             url: x.url,
           }));
+          const noReply = op.issues.filter((x) => !((x.comments || 0) > 0)).length;
           const head = [
-            op.issues.length ? `${op.issues.length} 个 issue 没人回` : "",
+            op.issues.length
+              ? (noReply === op.issues.length
+                ? `${op.issues.length} 个 issue 没人回`
+                : (noReply === 0
+                  ? `${op.issues.length} 个 issue 还开着（都有回复）`
+                  : `${op.issues.length} 个 issue 还开着（${noReply} 个没人回）`))
+              : "",
             op.pulls.length ? `${op.pulls.length} 个 PR 没合` : "",
           ].filter(Boolean).join("，");
           if (!rows.length) {
             // GitHub 的 open_issues_count 含 PR、也含已经回过话的老单，和这份「没人回」清单不是一个口径
             const counter = Number(data.repo?.openIssues || 0);
             const tail = counter ? `（GitHub 计数 ${counter} 个，含 PR 和回过话的老单）` : "";
-            return send(200, { answer: `${scope}：没有没人回的 issue，也没有没合的 PR${tail}。`, source: "data" });
+            return send(200, { answer: `${scope}：没有还开着的 issue，也没有没合的 PR${tail}。`, source: "data" });
           }
           return send(200, { answer: `${scope}：${head}。`, links, source: "data" });
         }

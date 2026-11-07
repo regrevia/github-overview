@@ -82,7 +82,7 @@ export function makeGithub(token, { owner, name }) {
     async releases() { return gh(`${repoPath}/releases?per_page=100`); },
     // external-only: everything not authored by the repo owner (or self aliases)
     // 用 REST 列表而不是 search：search 有索引延迟，刚合并/关闭的状态要十几分钟才可见
-    // 真的没处理的活：open 且没人回过的 issue、还没合的 PR。
+    // 真的没处理的活：还开着的 issue（含已经有过回复的）、还没合的 PR。
   // 不能从 activity 窗口里筛——窗口外的老 issue 会让概览谎报「都已回复」
   async openWork(selfLogins = []) {
     const self = new Set([owner.toLowerCase(), ...selfLogins.map((x) => String(x).toLowerCase())]);
@@ -107,7 +107,7 @@ export function makeGithub(token, { owner, name }) {
       };
     };
     for (const it of issueRows || []) {
-      if (it.pull_request || (it.comments || 0) > 0) continue;
+      if (it.pull_request) continue;
       const row = norm(it, it.comments);
       if (row) out.issues.push(row);
     }
