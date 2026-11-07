@@ -1151,7 +1151,7 @@ function applyLive(json) {
   const spanDays = asked && rg.covered ? Math.min(asked, rg.covered) : null;
   const covLbl = spanDays && asked && spanDays < asked ? spanDays + " 天 · " : "";
   document.getElementById("k-contrib-sub").textContent = currentRange === 1
-    ? (ic + pc ? dayLbl + " " + ic + " issue、" + pc + " PR" : dayLbl + " 没有新的")
+    ? (ic + pc ? dayLbl + " 新开 " + ic + " issue、" + pc + " PR" : dayLbl + " 没有新开 issue 或 PR")
     : covLbl + ic + " issue、" + pc + " PR";
   document.getElementById("k-stars").textContent = repo.stars ?? "—";
   // 星标增长只报真实覆盖区间：1 天报当天，多天报有数据的跨度
