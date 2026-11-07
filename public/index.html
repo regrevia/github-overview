@@ -1145,11 +1145,11 @@ function applyLive(json) {
   // 1 天视图报的是最近一个完整日，不是今天
   const dayLbl = json.range && json.range.to ? label(json.range.to) : "今天";
   // 子标要说清是哪几类反馈，别只给一个合计
-  // 多天窗口里数据不够长时，写实际覆盖的天数：90 天的选择只有 20 天数据，不能当成 90 天
+  // 多天窗口里数据不够长时，写实际有数据的天数：90 天的选择只有 19 天数据，不能当成 90 天
+  // 口径和摘要一致：min(图上选的天数, 实际覆盖天数)，today 没采集到不算一天
   const rg = json.range || {}, asked = rg.days;
-  // 有数据的第一天到窗口末日（range.from 是请求区间的头，不是数据起点）
-  const spanDays = rg.first && rg.to ? Math.round((Date.parse(rg.to) - Date.parse(rg.first)) / 864e5) + 1 : null;
-  const covLbl = asked && spanDays && spanDays < asked ? spanDays + " 天 · " : "";
+  const spanDays = asked && rg.covered ? Math.min(asked, rg.covered) : null;
+  const covLbl = spanDays && asked && spanDays < asked ? spanDays + " 天 · " : "";
   document.getElementById("k-contrib-sub").textContent = currentRange === 1
     ? (ic + pc ? dayLbl + " " + ic + " issue、" + pc + " PR" : dayLbl + " 没有新的")
     : covLbl + ic + " issue、" + pc + " PR";

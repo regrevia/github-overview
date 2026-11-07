@@ -202,6 +202,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     const span = Math.round((Date.parse(to) - Date.parse(from)) / 864e5) + 1;
     return seen ? { span, from, to, delta } : null;
   }
+  // 星标跨度和浏览/issue 的「近 N 天」用同一个口径：今天没采集到不算一天
+  const clampSpan = (sg, cov) => (sg && cov ? { ...sg, span: Math.max(1, Math.min(sg.span, cov)) } : sg);
 
   // GitHub 只回 14 天去重访客，更长范围沿用这段窗口并说明覆盖天数
   const coveredDays = (s) => Object.values(s.days || {}).filter((d) => d.u != null).length;
@@ -380,13 +382,13 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         alerts: anyAlert ? alerts : null,
         at: slices.map(({ s }) => s.meta?.contribAt).filter(Boolean).sort().at(-1) || null,
       },
-      starGrowth: starGrowthOf(
+      starGrowth: clampSpan(starGrowthOf(
         [rows.find((r) => r.v != null || r.u != null)?.d || "", slices.map(({ s }) => firstDay(s)).filter(Boolean).sort()[0] || ""]
           .sort()
           .at(-1) || null,
         rows.at(-1)?.d || null,
         slices.map(({ s }) => s),
-      ),
+      ), Math.max(...slices.map(({ s }) => coveredDays(s)), 0)),
       updatedAt: lastSync,
     };
   }
@@ -475,11 +477,11 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         home: (meta.paths || []).filter((p) => p.p === "仓库主页").reduce((a, p) => a + (p.n || 0), 0) || null,
         npm: meta.npmWeek ?? null,
       },
-      starGrowth: starGrowthOf(
+      starGrowth: clampSpan(starGrowthOf(
         [rows.find((r) => r.v != null || r.u != null)?.d || "", firstDay(s) || ""].sort().at(-1) || null,
         rows.at(-1)?.d || null,
         [s],
-      ),
+      ), coveredDays(s)),
       referrers: meta.referrers || [],
       releases: s.releases || [],
       npmVersions: meta.npmVers || [],
@@ -574,12 +576,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         const single = data.range.days === 1 ? data.series[0] : null;
         const ctx = {
           days: windowDays,
-          span: (() => {
-            const rowsAll = data.series || [];
-            const firstReal = rowsAll.find((r) => r.v != null || r.u != null);
-            const lastAny = rowsAll.at(-1);
-            return firstReal && lastAny ? Math.round((Date.parse(lastAny.d) - Date.parse(firstReal.d)) / 864e5) + 1 : null;
-          })(),
+          // 日历跨度会把「今天还没采集到」算成一天；只承诺真正有数据的天数
+          span: Math.max(1, Math.min(windowDays, data.range.covered || windowDays)),
           day: single ? single.d : null,
           covered: data.range.covered,
           uniques: single ? single.u : data.totals.uniques,
