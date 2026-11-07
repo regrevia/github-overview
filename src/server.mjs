@@ -612,7 +612,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
             .filter((r) => r.v > 0)
             .sort((a, b) => b.v - a.v)
             .slice(0, 3);
-        if (/最热|流量最高|浏览最多|哪个(仓库|项目).*(流量|浏览)/.test(question)) {
+        // 「发版后哪个涨得多」里也有「浏览」，别被流量排名抢走
+        if (!/发版|发布|版本/.test(question) && /最热|流量最高|浏览最多|哪个(仓库|项目).*(流量|浏览)/.test(question)) {
           const rows = rankBy((d) => d.totals.views);
           if (!rows.length) return send(200, { answer: "这段时间还没有浏览记录。", source: "data" });
           const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)} 次浏览`).join("，");
@@ -684,8 +685,11 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
             if (!it || it.before?.views?.avg == null) return send(200, { answer: `${key} 近期的发版还看不出效果。`, source: "data" });
             const b = Math.round(it.before.views.avg * 10) / 10, a = Math.round((it.after?.views?.avg ?? 0) * 10) / 10;
             const pct = it.delta?.views != null ? `${it.delta.views >= 0 ? "+" : ""}${Math.round(it.delta.views)}%` : "";
+            // 前后窗口不一定等长（默认前 7 天、后 3 天），写出来才不会被当同期对比
+            const bd = it.before?.days, ad = it.after?.days;
+            const win = bd && ad && bd !== ad ? `（前 ${bd} 天 vs 后 ${ad} 天）` : "";
             return send(200, {
-              answer: `${key} ${String(it.version).replace(/^v/i, "")} 发版前后，浏览日均 ${num(b)} → ${num(a)}${pct ? "（" + pct + "）" : ""}。`,
+              answer: `${key} ${String(it.version).replace(/^v/i, "")} 发版前后，浏览日均 ${num(b)} → ${num(a)}${pct ? "（" + pct + "）" : ""}${win}。`,
               links: [{ label: key, url: `https://github.com/${key}` }],
               source: "data",
             });
@@ -701,7 +705,10 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
               return `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name}${pair}`;
             })
             .join("，");
-          return send(200, { answer: `全站发版后浏览涨得最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
+          // 排名口径写在答案里：按浏览日均涨幅、日均不到 5 次的不参与、前后窗口不等长
+          const im0 = data.impacts.find((x) => x.before?.days && x.after?.days);
+          const relWin = im0 && im0.before.days !== im0.after.days ? `；前 ${im0.before.days} 天 vs 后 ${im0.after.days} 天` : "";
+          return send(200, { answer: `全站发版后浏览涨得最多：${body}。（按发版前后浏览日均的涨幅排，日均不到 5 次的不参与${relWin}）`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         const topRepos = key === ALL ? null : targets
           .map((t) => ({ name: t.name, u: repoStore(store, t.key).meta?.views?.uniques ?? 0 }))
