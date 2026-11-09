@@ -34,7 +34,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
 
   async function syncOne(t) {
     const s = repoStore(store, t.key);
-    const [views, clones, paths, referrers, repoInfo, releases, activity, alerts, openWork, starDates] = await Promise.all([
+    const [views, clones, paths, referrers, repoInfo, releases, activity, alerts, openWork, starDates, forkList] = await Promise.all([
       t.gh.views().catch(() => null),
       t.gh.clones().catch(() => null),
       t.gh.paths().catch(() => null),
@@ -45,6 +45,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       t.gh.alerts().catch(() => null),
       t.gh.openWork(self).catch(() => null),
       t.gh.stargazers().catch(() => null),
+      t.gh.forks().catch(() => null),
     ]);
     if (views || clones) mergeTraffic(s, views, clones);
     if (starDates) mergeStars(s, starDates);
@@ -75,6 +76,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     }
     const prefix = `/${t.owner}/${t.name}`;
     s.meta.repo = repoInfo || s.meta.repo || { owner: t.owner, name: t.name };
+    if (forkList) s.meta.forks = { at: new Date().toISOString(), items: forkList.slice(0, 200) };
     if (paths) {
       s.meta.paths = paths.map((p) => {
         const raw = String(p.path || "");
@@ -303,6 +305,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       }
     }
     const anyAlert = alertKeys.some((k) => alerts[k].available || alerts[k].blocked);
+    const fw = forkWindow(windowDays);
     const repoInfo = slices.reduce(
       (acc, { s }) => ({
         stars: acc.stars + (s.meta?.repo?.stars || 0),
@@ -342,6 +345,9 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
             npmWeek: r.meta?.npmWeek ?? null,
             stars: r.meta?.repo?.stars ?? null,
             starDelta: sg ? sg.delta : null,
+            forks: r.meta?.repo?.forks ?? null,
+            newForks: (r.meta?.forks?.items || []).filter(inWindow(fw.from, fw.to)).length,
+            lastFork: (r.meta?.forks?.items || [])[0] || null,
           };
         })
         .sort((a, b) => (b.uniques ?? 0) - (a.uniques ?? 0)),
@@ -361,6 +367,26 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         .sort((a, b) => (a.limited === b.limited ? b.at.localeCompare(a.at) : a.limited ? 1 : -1)),
       paths: [...paths.values()].sort((a, b) => b.n - a.n),
       referrers: [...referrers.values()].sort((a, b) => b.n - a.n),
+      forks: (() => {
+        const items = slices
+          .flatMap(({ t, s }) => (s.meta?.forks?.items || [])
+            .filter(inWindow(fw.from, fw.to))
+            .map((x) => ({ ...x, repo: t.key })))
+          .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+        const latest = slices
+          .flatMap(({ t, s }) => (s.meta?.forks?.items || []).map((x) => ({ ...x, repo: t.key })))
+          .sort((a, b) => String(b.at).localeCompare(String(a.at)))[0] || null;
+        return {
+          total: repoInfo.forks,
+          from: fw.from,
+          to: fw.to,
+          inWindow: items.length,
+          items: items.slice(0, 100),
+          // 窗口里没有新 fork 时，也要能说清最近一次是什么时候
+          latest,
+          at: slices.map(({ s }) => s.meta?.forks?.at).filter(Boolean).sort().at(-1) || null,
+        };
+      })(),
       releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 120),
       npmVersions,
       impact: windowDays < 7 ? null : (() => {
@@ -442,12 +468,20 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
   }
 
   const inWindow = (from, to) => (x) => {
-    const at = String(x.mergedAt || x.closedAt || x.createdAt || "").slice(0, 10);
+    // fork 用 at，活动条目用 createdAt/mergedAt：两种字段都要认
+    const at = String(x.at || x.mergedAt || x.closedAt || x.createdAt || "").slice(0, 10);
     return !from || (at >= from && at <= to);
+  };
+  // fork 按创建时间算，不受流量数据滞后一天影响
+  const forkWindow = (days) => {
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - Math.max(0, days - 1) * 864e5).toISOString().slice(0, 10);
+    return { from, to };
   };
 
   function buildRepo(windowDays, t) {
     const s = repoStore(store, t.key);
+    const fw = forkWindow(windowDays);
     const rows = series(s, windowDays, s.npm || {});
     // 同全站：固定按「最近 14 个完整日」，不跟窗口末行走
     const sum14 = () => {
@@ -482,6 +516,16 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         rows.at(-1)?.d || null,
         [s],
       ), coveredDays(s)),
+      // fork 是留存信号：谁在什么时候 fork 的，窗口内单独列出来
+      forks: {
+        total: meta.repo?.forks ?? null,
+        from: fw.from,
+        to: fw.to,
+        inWindow: (meta.forks?.items || []).filter(inWindow(fw.from, fw.to)).length,
+        items: (meta.forks?.items || []).filter(inWindow(fw.from, fw.to)).slice(0, 30),
+        latest: (meta.forks?.items || [])[0] || null,
+        at: meta.forks?.at || null,
+      },
       referrers: meta.referrers || [],
       releases: s.releases || [],
       npmVersions: meta.npmVers || [],

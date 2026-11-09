@@ -80,6 +80,15 @@ export function makeGithub(token, { owner, name }) {
     async referrers() { return gh(`${repoPath}/traffic/popular/referrers`); },
     async paths() { return gh(`${repoPath}/traffic/popular/paths`); },
     async releases() { return gh(`${repoPath}/releases?per_page=100`); },
+    // fork 自带创建时间：只取最新一页就够判断「最近有没有人 fork」
+    async forks() {
+      const rows = await gh(`${repoPath}/forks?per_page=100&sort=newest`);
+      if (!Array.isArray(rows)) return null;
+      return rows
+        .map((r) => ({ login: r.owner?.login || "ghost", at: r.created_at, url: r.html_url }))
+        .filter((r) => r.at)
+        .sort((x, y) => String(y.at).localeCompare(String(x.at)));
+    },
     // external-only: everything not authored by the repo owner (or self aliases)
     // 用 REST 列表而不是 search：search 有索引延迟，刚合并/关闭的状态要十几分钟才可见
     // 真的没处理的活：还开着的 issue（含已经有过回复的）、还没合的 PR。

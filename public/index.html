@@ -87,6 +87,8 @@
   .kpi-sub { font-size: 12px; color: var(--label-secondary); }
   .head-note { font-size: 12px; font-weight: 400; color: var(--label-secondary); margin-left: 6px; }
   #sec-top { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-l1); }
+  #fork-list { margin-top: 10px; }
+  #fork-list td:first-child { font-size: 13px; font-weight: 400; }
   .leaders { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 28px; padding: 14px 0 4px; }
   .lead { min-width: 0; }
   .lead-label { font-size: 12px; color: var(--label-secondary); }
@@ -335,6 +337,17 @@
           <div><span>PR</span><b id="s-prs">—</b><em id="s-prs-sub"></em></div>
           <div><span>安全告警 · 快照</span><b id="s-alerts">未开启</b><em id="s-alerts-sub">无数据</em></div>
         </div>
+      </section>
+
+      <section class="sec" id="sec-forks" hidden>
+        <div class="head"><h2>Fork<span class="src" id="fork-range"></span><span class="head-note" id="fork-fresh"></span></div>
+        <div class="stats">
+          <div><span>总 fork</span><b id="f-total">—</b><em id="f-total-sub"></em></div>
+          <div><span>新增</span><b id="f-new">—</b><em id="f-new-sub"></em></div>
+          <div><span>最近</span><b id="f-last">—</b><em id="f-last-sub"></em></div>
+        </div>
+        <div class="note" id="fork-note" hidden></div>
+        <div id="fork-list"></div>
       </section>
 
       <section class="sec" id="sec-impact" hidden>
@@ -1079,6 +1092,77 @@ function renderImpacts(list) {
   }
 }
 
+function renderForks(json, days) {
+  const sec = document.getElementById("sec-forks");
+  const f = json.forks;
+  if (!f || f.total == null) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const all = json.repo?.fullName === "全部仓库";
+  const items = f.items || [];
+  const note = document.getElementById("fork-note");
+  note.hidden = true;
+  note.textContent = "";
+  document.getElementById("fork-range").textContent = days === 1 ? "今天" : `近 ${days} 天`;
+  document.getElementById("fork-fresh").textContent = f.at ? `${label(f.at)} 更新` : "";
+  document.getElementById("f-total").textContent = f.total.toLocaleString("en");
+  document.getElementById("f-total-sub").textContent = all
+    ? `${(json.repos || []).filter((r) => (r.forks || 0) > 0).length} 个仓库有 fork`
+    : "";
+  document.getElementById("f-new").textContent = (f.inWindow || 0).toLocaleString("en");
+  document.getElementById("f-new-sub").textContent = items.length ? "" : "没有新 fork";
+  const last = f.latest || items[0];
+  document.getElementById("f-last").textContent = last ? last.login : "—";
+  document.getElementById("f-last-sub").textContent = last
+    ? (all && last.repo ? `${last.repo.split("/").slice(-1)[0]} · ` : "") + label(last.at)
+    : "";
+  const list = document.getElementById("fork-list");
+  list.textContent = "";
+  if (!items.length) return;
+  if (all) {
+    if (items.length >= 100) {
+      note.hidden = false;
+      note.textContent = "只统计最近 100 个 fork";
+    }
+    const rows = (json.repos || []).filter((r) => (r.forks || 0) > 0)
+      .sort((a, b) => (b.newForks || 0) - (a.newForks || 0) || (b.forks || 0) - (a.forks || 0));
+    if (!rows.length) return;
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>仓库</th><th>新增</th><th>总数</th><th>最近</th></tr></thead>";
+    const body = document.createElement("tbody");
+    for (const r of rows) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${r.name}</td><td>${(r.newForks || 0).toLocaleString("en")}</td><td>${(r.forks || 0).toLocaleString("en")}</td><td>${r.lastFork ? label(r.lastFork.at) : "—"}</td>`;
+      body.appendChild(tr);
+    }
+    table.appendChild(body);
+    list.appendChild(table);
+    return;
+  }
+  if (items.length > 20) {
+    note.hidden = false;
+    note.textContent = `只列最近 20 个，另有 ${items.length - 20} 个`;
+  }
+  const table = document.createElement("table");
+  table.innerHTML = "<thead><tr><th>谁</th><th>时间</th></tr></thead>";
+  const body = document.createElement("tbody");
+  for (const x of items.slice(0, 20)) {
+    const tr = document.createElement("tr");
+    const who = document.createElement("td");
+    const a = document.createElement("a");
+    a.href = x.url;
+    a.target = "_blank";
+    a.rel = "noreferrer";
+    a.textContent = x.login;
+    who.appendChild(a);
+    const when = document.createElement("td");
+    when.textContent = label(x.at);
+    tr.append(who, when);
+    body.appendChild(tr);
+  }
+  table.appendChild(body);
+  list.appendChild(table);
+}
+
 function renderFunnel(f) {
   const sec = document.getElementById("sec-funnel");
   if (!f || f.views == null) { sec.hidden = true; return; }
@@ -1219,6 +1303,8 @@ function applyLive(json) {
   renderImpact(json.impact);
   renderImpacts(json.impacts);
   renderFunnel(json.funnel);
+  // 这里还没拿到 render(days) 的参数：用当前窗口，切范围时 render 会再刷一次
+  renderForks(json, currentRange);
   OVERVIEW = json.repos || [];
   drawOverview();
   renderTop();
