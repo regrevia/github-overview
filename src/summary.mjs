@@ -56,6 +56,43 @@ const detailLines = (external) => {
 // 实际有数据的日历跨度；covered 是「有访客去重值的天数」，缺一天会少 1，别用它当跨度
 const dataSpan = (ctx) => Math.max(1, ctx.span ?? Math.min(ctx.days ?? 1, ctx.covered || ctx.days || 1));
 
+// 用户数没有直接口径，只能拿几个独立信号折算后交叉验证：
+// GitHub 只给 14 天去重访客；npm 只给下载次数（含更新、重装、多机、CI、镜像）。
+// 把两路各自折成人数区间，再把中位平均成「大约多少人」，并保留区间，避免给出假的精确值。
+export function userEstimate({ uniques, npmWeek, covered, stars } = {}) {
+  const span = Math.min(Math.max(1, Number(covered) || 14), 14);
+  const u = Number(uniques) > 0 ? Number(uniques) : null;
+  const npm = Number(npmWeek) > 0 ? Number(npmWeek) : null;
+  const gh = u ? { low: Math.round(u), high: Math.round((u * 30) / span) } : null;
+  // 3–10 次/人/周：一个开发者一周内更新、重装、多机各下载几次，CI 和镜像还会再放大
+  const np = npm ? { low: Math.round(npm / 10), high: Math.round(npm / 3) } : null;
+  if (!gh && !np) return null;
+  const mid = (r) => (r.low + r.high) / 2;
+  const mids = [gh, np].filter(Boolean).map(mid);
+  const round = (x, step) => Math.round(x / step) * step;
+  const point = round(mids.reduce((a, b) => a + b, 0) / mids.length, 100);
+  const ranges = [gh, np].filter(Boolean);
+  return {
+    point,
+    low: round(Math.min(...ranges.map((r) => r.low)), 100),
+    high: round(Math.max(...ranges.map((r) => r.high)), 100),
+    gh,
+    npm: np,
+    span,
+    stars: Number(stars) > 0 ? Number(stars) : null,
+  };
+}
+
+const estimateLine = (ctx) => {
+  const e = userEstimate(ctx);
+  if (!e) return [];
+  const n = (x) => Number(x).toLocaleString("en-US");
+  const parts = [];
+  if (e.gh) parts.push(`GitHub 近 ${e.span} 天去重访客 ${n(e.gh.low)} 人，按同一批人在这段时间到访折算到一个月约 ${n(e.gh.high)} 人`);
+  if (e.npm) parts.push(`npm 周下载 ${n(ctx.npmWeek)} 次，按每人每周 3 到 10 次下载折算（更新、重装、多机、CI 和镜像重复都已含在这个倍率里）约 ${n(e.npm.low)} 到 ${n(e.npm.high)} 人`);
+  return [`用户规模估算（问用户数、多少人在用时用这一条，先给约数再给依据，不要逐个数字复述）：约 ${n(e.point)} 人，区间 ${n(e.low)} 到 ${n(e.high)} 人。依据：${parts.join("；")}${e.stars ? `；stars ${n(e.stars)} 只作旁证，不单独换算` : ""}。这是估算，不能回答算不出来，也不能把 npm 下载次数直接说成人数`];
+};
+
 const factLines = (ctx) =>
   [
     `范围：${ctx.scope || "本仓库"}。issue/PR/发版按图上 ${ctx.span ?? ctx.days} 天`,
@@ -73,6 +110,7 @@ const factLines = (ctx) =>
     ...(ctx.impact ? [`最近发版 ${ctx.impact.name ? ctx.impact.name + " " : ""}${ctx.impact.version}（${mmdd(ctx.impact.at)}）：前 7 天日均浏览 ${ctx.impact.before.views?.avg ?? "—"}、下载 ${ctx.impact.before.npm?.avg ?? "—"}，后 7 天 ${ctx.impact.after.views?.avg ?? "—"}、${ctx.impact.after.npm?.avg ?? "—"}`] : []),
     `stars 合计 ${ctx.stars}（当前总数），近 ${ctx.starGrowth?.span ?? ctx.days} 天新增 ${ctx.starGrowth?.delta ?? "—"}，总数和新增要分开说，新增要带上这几天，新增恰好等于总数时只报一次`,
     `npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
+    ...estimateLine(ctx),
     `最热页面（近 ${Math.min(ctx.covered || 14, 14)} 天）：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
   ].join("\n");
 
@@ -92,6 +130,7 @@ function aiLinesTrusted(lines, ctx) {
     ctx.impact?.before?.views?.avg, ctx.impact?.after?.views?.avg,
     ctx.impact?.before?.npm?.avg, ctx.impact?.after?.npm?.avg,
     ...(ctx.paths || []).slice(0, 3).map((p) => p.n),
+    ...[userEstimate(ctx)].filter(Boolean).flatMap((e) => [e.point, e.low, e.high, e.gh?.low, e.gh?.high, e.npm?.low, e.npm?.high]),
   ].filter((v) => typeof v === "number");
   for (const line of lines) {
     if (/^[^\d]{0,4}个仓库/.test(line.trim())) return false;
@@ -120,7 +159,8 @@ export async function askQuestion(ctx, question, tools = []) {
         "数据里没有的直说没有，不要编造。回答用纯文本，不用 markdown，控制在 3 句以内。" +
         "数字只能引用上面事实和工具结果里出现过的原值，不要自己加总、换算或取整；日期和跨度也要和事实一致。" +
         "事实里的「范围」就是问题限定的范围，不要换成别的范围来说。" +
-        "访客数口径是去重真人，克隆另算，机器人流量和发布峰值已经排除在外部反馈之外。",
+        "访客数口径是去重真人，克隆另算，机器人流量和发布峰值已经排除在外部反馈之外。" +
+        "问到用户数、多少人在用、用户规模时，用事实里的用户规模估算：第一句给约数，第二句给依据（GitHub 去重访客折算、npm 下载按每人每周 3 到 10 次折算扣掉重复）并说明是估算；不要罗列每个数字，不要回答算不出来，也不要把 npm 下载次数直接说成人数。",
     },
     { role: "user", content: `${factLines(ctx)}\n\n问题：${question}` },
   ];
