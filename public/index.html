@@ -794,6 +794,8 @@ function render(days) {
   npmChart(document.getElementById("c-npm"), days);
   donut(document.getElementById("donut"));
   ranks(document.getElementById("ranks"));
+  // 切范围后 fork 的窗口标题也得跟着变，不能停在上一段
+  renderForks(LIVE, days);
 }
 
 document.getElementById("seg").addEventListener("click", e => {
@@ -1304,7 +1306,7 @@ function applyLive(json) {
   renderImpacts(json.impacts);
   renderFunnel(json.funnel);
   // 这里还没拿到 render(days) 的参数：用当前窗口，切范围时 render 会再刷一次
-  renderForks(json, currentRange);
+  renderForks(json, json.range?.days || currentRange);
   OVERVIEW = json.repos || [];
   drawOverview();
   renderTop();
