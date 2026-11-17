@@ -288,7 +288,7 @@
     <div class="kpi">
       <div class="kpi-label">npm 下载</div>
       <div class="kpi-value" id="k-npm">—</div>
-      <div class="kpi-sub" id="k-npm-sub">周汇总</div>
+      <div class="kpi-sub" id="k-npm-sub">近 7 天</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">stars</div>
@@ -783,7 +783,7 @@ function render(days) {
     ? "访客 —"
     : days === 1
       ? `访客 ${fmt(uniq)} · ${DATA[DATA.length - 1]?.d || ""}`
-      : `${dom.length} 天 · 访客 ${fmt(uniq)}（${Math.min(covN, 14)} 天去重）`;
+      : `${covN} 天 · 访客 ${fmt(uniq)}（${Math.min(covN, 14)} 天去重）`;
   rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
   // issue/PR 数跟着所选窗口走，标题要说清是哪段
   const cSpan = LIVE.starGrowth?.span;
@@ -932,7 +932,9 @@ function renderTop() {
   const rows = OVERVIEW.filter((r) => r && r.key);
   sec.hidden = !rows.length;
   if (!rows.length) return;
-  const span = currentRange === 1 ? (DATA[DATA.length - 1]?.d || "") : `近 ${currentRange} 天`;
+  // 请求的范围超过已存天数时，标题按实际覆盖的天数说，别把 90 天写成 90 天
+  const covSpan = Math.min(currentRange, LIVE.range?.covered || currentRange);
+  const span = currentRange === 1 ? (DATA[DATA.length - 1]?.d || "") : `近 ${covSpan} 天`;
   const sig = span + "|" + rows.map((r) => `${r.key}:${r.views}:${r.npm}:${r.npmWeek}:${r.uniques}:${r.starDelta}`).join(",");
   if (sig === TOP_SIG) return;
   TOP_SIG = sig;
@@ -940,11 +942,13 @@ function renderTop() {
   const node = document.getElementById("leaders");
   node.textContent = "";
   const sum = (f) => rows.reduce((a, r) => a + (Number(f(r)) || 0), 0);
+  // npm 当天数据要晚一两天才到，窗口里全空时不能把「还没采集」写成 0
+  const hasNpm = DATA.some((r) => r.n != null);
   const metrics = [
     { label: "浏览最多", k: "views", total: sum((r) => r.views), empty: "没有浏览" },
     { label: "访客最多", k: "uniques", total: sum((r) => r.uniques), empty: "没有访客", note: currentRange === 1 ? "当天访客" : "14 天去重" },
     { label: "涨星最多", k: "starDelta", total: sum((r) => r.starDelta), empty: "没有新增" },
-    { label: "下载最多", k: "npmWeek", total: sum((r) => r.npmWeek), empty: "没有下载", note: "周汇总" },
+    { label: "下载最多", k: "npm", total: sum((r) => r.npm), empty: hasNpm ? "没有下载" : "还没采集到", emptyVal: hasNpm ? "0" : "—" },
   ];
   for (const m of metrics) {
     const best = [...rows].sort((a, b) => (b[m.k] ?? -1) - (a[m.k] ?? -1))[0];
@@ -962,7 +966,7 @@ function renderTop() {
     sub.className = "lead-sub";
     if (!best || !(val > 0)) {
       name.textContent = "—";
-      value.textContent = "0";
+      value.textContent = m.emptyVal || "0";
       sub.textContent = m.empty;
     } else {
       name.textContent = best.name;
@@ -987,11 +991,13 @@ function drawOverview() {
   const node = document.getElementById("repo-list");
   node.textContent = "";
   if (!OVERVIEW.length) return;
-  const k = OV_SORT === "u" ? "uniques" : "npmWeek";
+  const k = OV_SORT === "u" ? "uniques" : "npm";
   const projNote = document.getElementById("proj-note");
   if (projNote) {
-    const span = currentRange === 1 ? (DATA[DATA.length - 1]?.d || "") : "近 14 天";
-    projNote.textContent = `· 访客 ${span} · 下载 周汇总`;
+    const day = DATA[DATA.length - 1]?.d || "";
+    const uSpan = currentRange === 1 ? day : "近 14 天";
+    const nSpan = currentRange === 1 ? day : `近 ${Math.min(currentRange, LIVE.range?.covered || currentRange)} 天`;
+    projNote.textContent = `· 访客 ${uSpan} · 下载 ${nSpan}`;
   }
   const emptyWord = OV_SORT === "u" ? "没有访客" : "没有下载";
   const all = [...OVERVIEW].sort((a, b) => (b[k] ?? 0) - (a[k] ?? 0));
@@ -1369,7 +1375,7 @@ function applyLive(json) {
   const t = json.totals || {};
   document.getElementById("k-npm").textContent = t.npmWeek != null ? fmt(t.npmWeek) : "—";
   const npmSub = document.getElementById("k-npm-sub");
-  if (npmSub) npmSub.textContent = repo.fullName === "全部仓库" && repo.count ? repo.count + " 个仓 · 周汇总" : "周汇总";
+  if (npmSub) npmSub.textContent = repo.fullName === "全部仓库" && repo.count ? repo.count + " 个仓 · 近 7 天" : "近 7 天";
   const days = json.range?.storedDays || 0;
   document.getElementById("r-days").textContent = days + " 天";
   if (json.updatedAt) {
