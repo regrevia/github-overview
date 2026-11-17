@@ -330,7 +330,11 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       repos: targets
         .map((t) => {
           const r = repoStore(store, t.key);
-          const w = series(r, windowDays, r.npm || {});
+          // 1 天窗口各仓必须报同一个日历日，否则排行里的下载量和上面那行对不上
+          const day1 = windowDays === 1 ? rows[0]?.d : null;
+          const w = day1
+            ? [{ d: day1, v: r.days?.[day1]?.v ?? null, u: r.days?.[day1]?.u ?? null, n: r.npm?.[day1] ?? r.days?.[day1]?.n ?? null }]
+            : series(r, windowDays, r.npm || {});
           const sg = starGrowthOf(
             [w.find((x) => x.v != null || x.u != null)?.d || "", firstDay(r) || ""].sort().at(-1) || null,
             w.at(-1)?.d || null,
