@@ -783,7 +783,8 @@ function render(days) {
     ? "访客 —"
     : days === 1
       ? `访客 ${fmt(uniq)} · ${DATA[DATA.length - 1]?.d || ""}`
-      : `${covN} 天 · 访客 ${fmt(uniq)}（${Math.min(covN, 14)} 天去重）`;
+      // 去重访客只有 GitHub 的 14 天窗口：别在它前面挂上所选范围，否则像是这段内的独立访客
+      : `访客 ${fmt(uniq)} · 近 ${Math.min(covN, 14)} 天去重`;
   rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
   // issue/PR 数跟着所选窗口走，标题要说清是哪段
   const cSpan = LIVE.starGrowth?.span;
@@ -802,7 +803,7 @@ document.getElementById("seg").addEventListener("click", e => {
   const b = e.target.closest("button");
   if (!b) return;
   [...e.currentTarget.children].forEach(x => x.classList.toggle("on", x === b));
-  render(+b.dataset.r);
+  // 先 render 会拿上一段范围的数据去填新范围的标题，等这次请求回来再一起重画
   pull(+b.dataset.r);
 });
 
@@ -1145,11 +1146,12 @@ function renderForks(json, days) {
       .sort((a, b) => (b.newForks || 0) - (a.newForks || 0) || (b.forks || 0) - (a.forks || 0));
     if (!rows.length) return;
     const table = document.createElement("table");
-    table.innerHTML = "<thead><tr><th>仓库</th><th>新增</th><th>累计</th><th>最近</th></tr></thead>";
+    // 表里只放这一段窗口的量：累计 fork 是全生命周期的数，放进来会被当成窗口结果
+    table.innerHTML = "<thead><tr><th>仓库</th><th>新增</th><th>最近</th></tr></thead>";
     const body = document.createElement("tbody");
     for (const r of rows) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${r.name}</td><td>${(r.newForks || 0).toLocaleString("en")}</td><td>${(r.forks || 0).toLocaleString("en")}</td><td>${r.lastFork ? label(r.lastFork.at) : "—"}</td>`;
+      tr.innerHTML = `<td>${r.name}</td><td>${(r.newForks || 0).toLocaleString("en")}</td><td>${r.lastFork ? label(r.lastFork.at) : "—"}</td>`;
       body.appendChild(tr);
     }
     table.appendChild(body);
@@ -1521,7 +1523,8 @@ async function pull(days, force, quiet) {
     if (seq !== PULL_SEQ) return null;
     // 拉不到就明说屏上是旧数据，别让旧仓数字看起来像新仓的
     repoNote("没连上服务，屏上还是上一次的数据");
-    render(days);
+    // 旧数据就按旧范围重画，别挂上新范围的名字
+    render(LIVE.range?.days || days);
     return null;
   }
 }
