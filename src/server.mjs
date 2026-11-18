@@ -53,7 +53,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     let npmOk = true;
     if (!t.npmExplicit) {
       const own = await t.npm.maintainers().catch(() => null);
-      npmOk = !own || !own.owners.length || own.owners.includes(t.owner.toLowerCase());
+      npmOk = own?.missing ? false : (!own || !own.owners.length || own.owners.includes(t.owner.toLowerCase()));
       if (!npmOk) {
         s.npm = {};
         delete s.meta.npmWeek;
@@ -254,8 +254,11 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       const cell = { d: k, v: null, u: null, c: null, cu: null, n: null };
       for (const { s } of slices) {
         const row = s.days?.[k];
+        // 下载逐日存在 s.npm 里，不在 s.days 那格：少读这一路，单日窗口永远没有下载数
+        const npmDay = s.npm?.[k] ?? row?.n;
+        if (npmDay != null) cell.n = (cell.n ?? 0) + npmDay;
         if (!row) continue;
-        for (const kk of ["v", "u", "c", "cu", "n"]) if (row[kk] != null) cell[kk] = (cell[kk] ?? 0) + row[kk];
+        for (const kk of ["v", "u", "c", "cu"]) if (row[kk] != null) cell[kk] = (cell[kk] ?? 0) + row[kk];
       }
       rows.push(cell);
     }
@@ -328,6 +331,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         uniques: sumOf((s) => s.meta?.views?.uniques),
         clones: rows.reduce((a, x) => a + (x.c ?? 0), 0),
         cloneUniques: sumOf((s) => s.meta?.clones?.uniques),
+        // npm 逐日是按窗口存的，npmWeek 是固定的 7 天滚动值：KPI 要用前者才跟得上范围
+        npm: rows.some((x) => x.n != null) ? rows.reduce((a, x) => a + (x.n ?? 0), 0) : null,
         npmWeek: sumOf((s) => s.meta?.npmWeek),
       },
       repos: targets
@@ -365,7 +370,11 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       funnel: {
         views: sum14(),
         home: [...paths.values()].filter((p) => p.p === "仓库主页").reduce((a, p) => a + p.n, 0) || null,
-        npm: sumOf((s) => s.meta?.npmWeek),
+        // 漏斗是一段固定 14 天的转化：下载也取同一段，混进 7 天的周汇总会让后面两级对不上
+        npm: (() => {
+          const ds = last14Days(funnelEnd());
+          return ds.length ? slices.reduce((acc, { s }) => acc + ds.reduce((b, d) => b + (s.npm?.[d] ?? 0), 0), 0) : null;
+        })(),
       },
       impacts: windowDays < 7 ? [] : slices
         .map(({ t, s }) => {
@@ -493,18 +502,21 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     const fw = forkWindow(windowDays);
     const rows = series(s, windowDays, s.npm || {});
     // 同全站：固定按「最近 14 个完整日」，不跟窗口末行走
-    const sum14 = () => {
+    const funnelEnd = () => {
       const t = new Date();
       t.setUTCHours(0, 0, 0, 0);
       t.setUTCDate(t.getUTCDate() - 1);
-      const ds = last14Days(t.toISOString().slice(0, 10));
+      return t.toISOString().slice(0, 10);
+    };
+    const sum14 = () => {
+      const ds = last14Days(funnelEnd());
       return ds.length ? ds.reduce((b, d) => b + (s.days?.[d]?.v ?? 0), 0) : null;
     };
     const meta = s.meta || {};
     const views = meta.views || {};
     const clones = meta.clones || {};
     return {
-      repo: { owner: t.owner, name: t.name, npmPkg: t.npmPkg, ...(meta.repo || {}) },
+      repo: { owner: t.owner, name: t.name, npmPkg: meta.npmOwned === false ? null : t.npmPkg, ...(meta.repo || {}) },
       range: { days: windowDays, from: rows[0]?.d, to: rows.at(-1)?.d, storedDays: storedDays(s), covered: coveredDays(s), first: firstDay(s) },
       series: rows,
       totals: {
@@ -512,16 +524,24 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         uniques: views.uniques ?? null,
         clones: rows.reduce((a, x) => a + (x.c ?? 0), 0),
         cloneUniques: clones.uniques ?? null,
+        npm: rows.some((x) => x.n != null) ? rows.reduce((a, x) => a + (x.n ?? 0), 0) : null,
         npmWeek: meta.npmWeek ?? null,
       },
       paths: meta.paths || [],
       funnel: {
         views: sum14(),
         home: (meta.paths || []).filter((p) => p.p === "仓库主页").reduce((a, p) => a + (p.n || 0), 0) || null,
-        npm: meta.npmWeek ?? null,
+        npm: (() => {
+          const ds = last14Days(funnelEnd());
+          return ds.length ? ds.reduce((b, d) => b + (s.npm?.[d] ?? 0), 0) : null;
+        })(),
       },
       starGrowth: clampSpan(starGrowthOf(
-        [rows.find((r) => r.v != null || r.u != null)?.d || "", firstDay(s) || ""].sort().at(-1) || null,
+        // 单日窗口就锁在那一天：这个仓那天没有流量行时退回自己的第一天，
+        // 会把一个月的涨星塞进「近 1 天」
+        windowDays === 1
+          ? (rows[0]?.d || null)
+          : ([rows.find((r) => r.v != null || r.u != null)?.d || "", firstDay(s) || ""].sort().at(-1) || null),
         rows.at(-1)?.d || null,
         [s],
       ), coveredDays(s)),
@@ -773,18 +793,24 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           return send(200, { answer: `全站现在共 ${total} 个 star${delta ? "，" + delta : ""}。`, source: "data" });
         }
         if (/npm|下载/.test(question)) {
+          // 下载逐日按窗口存，问几天就答几天；没采到就说没采到，不拿 7 天滚动值顶
+          const spanTxt = data.range?.covered ? `近 ${Math.min(data.range.days, data.range.covered)} 天` : "最近";
           if (key !== ALL) {
-            const w = data.totals.npmWeek;
+            const w = data.totals.npm;
+            if (data.repo && data.repo.npmPkg === null) {
+              return send(200, { answer: `${key} 没有关联 npm 包。`, links: [{ label: key, url: `https://github.com/${key}` }], source: "data" });
+            }
+            if (w == null) return send(200, { answer: `${key} 这段窗口还没采集到 npm 下载。`, links: [{ label: key, url: `https://github.com/${key}` }], source: "data" });
             return send(200, {
-              answer: w ? `${key} 近 7 天 npm 下载 ${num(w)} 次。` : `${key} 没有关联 npm 包。`,
+              answer: w ? `${key} ${spanTxt} npm 下载 ${num(w)} 次。` : `${key} 这段窗口没有 npm 下载。`,
               links: [{ label: key, url: `https://github.com/${key}` }],
               source: "data",
             });
           }
-          const rows = rankBy((d) => d.totals.npmWeek);
-          if (!rows.length) return send(200, { answer: "没有关联 npm 的仓库。", source: "data" });
-          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} 周下载 ${num(r.v)}`).join("，");
-          return send(200, { answer: `全站 npm 周下载最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
+          const rows = rankBy((d) => d.totals.npm);
+          if (!rows.length) return send(200, { answer: `${spanTxt}还没有 npm 下载数据。`, source: "data" });
+          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} ${num(r.v)} 次`).join("，");
+          return send(200, { answer: `全站 ${spanTxt} npm 下载最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
         if (/发版|发布.*(效果|影响)|涨了多少/.test(question)) {
           if (key !== ALL) {

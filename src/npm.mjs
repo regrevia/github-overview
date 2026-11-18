@@ -28,7 +28,9 @@ export function makeNpm(pkg) {
       try {
         const meta = await getJson(`${REGISTRY}/${safe}/latest`);
         return { owners: (meta.maintainers || []).map((m) => String(m.name || "").toLowerCase()), version: meta.version || null };
-      } catch {
+      } catch (e) {
+        // 包不存在和网络抖不一样：前者说明这个仓库没有 npm 包，别当成「有包但没采到」
+        if (e.status === 404) return { missing: true };
         return null;
       }
     },

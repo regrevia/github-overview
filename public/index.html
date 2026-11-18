@@ -372,7 +372,7 @@
         <div class="stats">
           <div><span>浏览</span><b id="f-views">—</b><em id="f-views-sub"></em></div>
           <div><span>仓库主页</span><b id="f-home">—</b><em id="f-home-sub"></em></div>
-          <div><span>npm 周下载</span><b id="f-npm">—</b><em id="f-npm-sub"></em></div>
+          <div><span>npm 下载</span><b id="f-npm">—</b><em id="f-npm-sub"></em></div>
         </div>
       </section>
 
@@ -1196,9 +1196,11 @@ function renderFunnel(f) {
   document.getElementById("f-views-sub").textContent = `近 ${Math.min(LIVE.range?.covered || 14, 14)} 天`;
   document.getElementById("f-home").textContent = f.home == null ? "—" : fmt(f.home);
   document.getElementById("f-home-sub").textContent = f.home == null ? "" : Math.round((f.home / f.views) * 100) + "% 浏览";
-  document.getElementById("f-npm").textContent = f.npm == null ? "—" : fmt(f.npm);
-  // npm 是周汇总，浏览是 14 天，跨窗口算倍数会误导，只给日均
-  document.getElementById("f-npm-sub").textContent = f.npm == null ? "" : `日均 ${fmt(Math.round(f.npm / 7))} 次`;
+  const fNoPkg = LIVE.repo && LIVE.repo.fullName !== "全部仓库" && !LIVE.repo.npmPkg;
+  document.getElementById("f-npm").textContent = f.npm == null || fNoPkg ? "—" : fmt(f.npm);
+  // 下载和浏览取同一段 14 天，只给日均，不跨窗口算倍数
+  const fDays = Math.min(LIVE.range?.covered || 14, 14);
+  document.getElementById("f-npm-sub").textContent = f.npm == null || fNoPkg ? "" : `日均 ${fmt(Math.round(f.npm / fDays))} 次`;
 }
 
 function applyLive(json) {
@@ -1383,9 +1385,16 @@ function applyLive(json) {
     asub.title = "依赖漏洞 / 代码扫描 / 密钥泄漏";
   }
   const t = json.totals || {};
-  document.getElementById("k-npm").textContent = t.npmWeek != null ? fmt(t.npmWeek) : "—";
+  // 逐日下载是按窗口存的，跟 npmWeek 那个固定 7 天滚动值不是一回事：这里只报窗口合计
+  const npmWin = t.npm;
+  document.getElementById("k-npm").textContent = npmWin != null ? fmt(npmWin) : "—";
   const npmSub = document.getElementById("k-npm-sub");
-  if (npmSub) npmSub.textContent = repo.fullName === "全部仓库" && repo.count ? repo.count + " 个仓 · 近 7 天" : "近 7 天";
+  if (npmSub) {
+    const span = currentRange === 1 ? "当天" : `近 ${Math.min(currentRange, LIVE.range?.covered || currentRange)} 天`;
+    const noPkg = repo.fullName !== "全部仓库" && LIVE.repo && !LIVE.repo.npmPkg;
+    npmSub.textContent = noPkg ? "没有关联 npm 包" : npmWin == null ? "还没采集到"
+      : (repo.fullName === "全部仓库" && repo.count ? repo.count + " 个仓 · " : "") + span;
+  }
   const days = json.range?.storedDays || 0;
   document.getElementById("r-days").textContent = days + " 天";
   if (json.updatedAt) {
