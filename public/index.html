@@ -1079,7 +1079,8 @@ function renderImpacts(list) {
   const rest = main ? rows.filter((r) => !sameAsMain(r)) : rows;
   const relNote = document.getElementById("rel-note");
   // 这行说的是能算出前后对比的仓，不是有发版的仓，别写成「有发版」
-  if (relNote) relNote.textContent = rows.length ? ` · ${rows.length} 个仓可对比` : "";
+  // 这里数的是「最新一版落在所选范围里」的仓，前后对比各用自己那 90 天，窗口要说清
+  if (relNote) relNote.textContent = rows.length ? ` · 范围内 ${rows.length} 个仓可对比` : "";
   const rank = [...rest].sort((a, b) => (b.delta?.views ?? -1e9) - (a.delta?.views ?? -1e9)).slice(0, 8);
   for (const r of rank) {
     const li = document.createElement("li");
@@ -1281,7 +1282,7 @@ function applyLive(json) {
   document.getElementById("k-rel").textContent = relCapped ? rels.length + "+" : rels.length;
   document.getElementById("k-rel-sub").textContent = rels.length
     ? (repo.fullName === "全部仓库"
-      ? (relCapped ? label(rels[rels.length - 1].at) + " → " + label(rels[0].at) : "最近 " + label(rels[0].at))
+      ? (() => { const first = label(rels[rels.length - 1].at), last = label(rels[0].at); return first === last ? last : first + " → " + last; })()
       : (() => { const first = bareTag(rels[rels.length - 1].tag), last = bareTag(rels[0].tag); return first === last ? last : first + " → " + last; })())
     : "本窗口无发版";
   const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open");

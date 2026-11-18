@@ -338,8 +338,10 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           const w = day1
             ? [{ d: day1, v: r.days?.[day1]?.v ?? null, u: r.days?.[day1]?.u ?? null, n: r.npm?.[day1] ?? r.days?.[day1]?.n ?? null }]
             : series(r, windowDays, r.npm || {});
+          // 单日窗口就按那一天算：这个仓那天没有浏览数据时不能退回到它自己的第一天，
+          // 否则「近 1 天」里塞进一个月的涨星
           const sg = starGrowthOf(
-            [w.find((x) => x.v != null || x.u != null)?.d || "", firstDay(r) || ""].sort().at(-1) || null,
+            day1 || [w.find((x) => x.v != null || x.u != null)?.d || "", firstDay(r) || ""].sort().at(-1) || null,
             w.at(-1)?.d || null,
             [r],
           );
