@@ -779,8 +779,11 @@ function render(days) {
     ? "访客 —"
     : days === 1
       ? `访客 ${fmt(uniq)} · ${DATA[DATA.length - 1]?.d || ""}`
-      // 去重访客只有 GitHub 的 14 天窗口：别在它前面挂上所选范围，否则像是这段内的独立访客
-      : `访客 ${fmt(uniq)} · 近 ${Math.min(covN, 14)} 天去重`;
+      // 去重访客只有 GitHub 的 14 天窗口，比所选范围长时它会比上面的浏览还大；
+      // 窗口写在最前面，才不会被读成「这段里来了这么多人」
+      : Math.min(covN, 14) > days
+        ? `近 ${Math.min(covN, 14)} 天去重访客 ${fmt(uniq)}`
+        : `访客 ${fmt(uniq)} · 近 ${Math.min(covN, 14)} 天去重`;
   rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
   // issue/PR 数跟着所选窗口走，标题要说清是哪段
   const cSpan = LIVE.starGrowth?.span;
