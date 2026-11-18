@@ -72,16 +72,19 @@ export function userEstimate({ uniques, npmWeek, covered, uniqSpan, stars } = {}
   const np = npm ? { low: Math.round(npm / 10), high: Math.round(npm / 3) } : null;
   if (!gh && !np) return null;
   const mid = (r) => (r.low + r.high) / 2;
-  const mids = [gh, np].filter(Boolean).map(mid);
   const round = (x, step) => Math.round(x / step) * step;
-  const point = round(mids.reduce((a, b) => a + b, 0) / mids.length, 100);
-  const ranges = [gh, np].filter(Boolean);
+  // npm 是下载次数，不是人：窗口比一周短时它说不清这段时间有多少人，
+  // 只能当旁证。人数结论以访客那一路为准，下载那一路单独写成下载口径。
+  const blend = span >= 7 && gh && np;
+  const ranges = blend ? [gh, np] : gh ? [gh] : [np];
+  const point = round(ranges.reduce((a, r) => a + mid(r), 0) / ranges.length, 100);
   return {
     point,
     low: round(Math.min(...ranges.map((r) => r.low)), 100),
     high: round(Math.max(...ranges.map((r) => r.high)), 100),
     gh,
     npm: np,
+    blended: blend,
     span,
     stars: Number(stars) > 0 ? Number(stars) : null,
   };
@@ -95,7 +98,10 @@ const estimateLine = (ctx) => {
   if (e.gh) parts.push(e.span === 1
     ? `GitHub ${mmdd(ctx.day)} 当天去重访客 ${n(e.gh.low)} 人，一天的数据只能说明这一天，按一周到访一次估一个月大约 ${n(e.gh.low)} 到 ${n(e.gh.high)} 人`
     : `GitHub 近 ${e.span} 天去重访客 ${n(e.gh.low)} 人，按同一批人在这段时间到访折算到一个月约 ${n(e.gh.high)} 人`);
-  if (e.npm) parts.push(`npm 周下载 ${n(ctx.npmWeek)} 次，按每人每周 3 到 10 次下载折算（更新、重装、多机、CI 和镜像重复都已含在这个倍率里）约 ${n(e.npm.low)} 到 ${n(e.npm.high)} 人`);
+  if (e.npm) parts.push(e.blended
+    ? `npm 周下载 ${n(ctx.npmWeek)} 次，按每人每周 3 到 10 次下载折算（更新、重装、多机、CI 和镜像重复都已含在这个倍率里）约 ${n(e.npm.low)} 到 ${n(e.npm.high)} 人`
+    // 窗口不到一周时下载量对应不上这些人，只能说明下载规模，不能当人数
+    : `npm 周下载 ${n(ctx.npmWeek)} 次（这是整周的下载次数，不等于这段时间有多少人在用），只能说明下载规模，不并进上面的人数`);
   return [`用户规模估算（问用户数、多少人在用时用这一条，先给约数再给依据，不要逐个数字复述）：约 ${n(e.point)} 人，区间 ${n(e.low)} 到 ${n(e.high)} 人。依据：${parts.join("；")}${e.stars ? `；stars ${n(e.stars)} 只作旁证，不单独换算` : ""}。这是估算，不能回答算不出来，也不能把 npm 下载次数直接说成人数`];
 };
 

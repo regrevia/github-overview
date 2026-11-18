@@ -1339,7 +1339,7 @@ function applyLive(json) {
   const asub = document.getElementById("s-alerts-sub");
   const aval = document.getElementById("s-alerts");
   const blocked = !!al && ["dependabot", "codeScanning", "secretScanning"].every((k) => al[k] && !al[k].available && al[k].blocked);
-  aval.textContent = blocked ? "缺权限" : !al || !opened.length ? "关闭" : total ? total + " 条" : "无";
+  aval.textContent = blocked ? "缺权限" : !al || !opened.length ? "关闭" : (total || 0) + " 条";
   asub.textContent = "";
   asub.removeAttribute("title");
   if (blocked) {
@@ -1347,7 +1347,8 @@ function applyLive(json) {
   } else if (!al || !opened.length) {
     asub.textContent = "无数据";
   } else if (!total) {
-    asub.textContent = "已开启";
+    // 0 条要说清零的含义，不能拿「功能已开启」当解释
+    asub.textContent = json.repo && json.repo.fullName === "全部仓库" ? "全部仓库都没有待处理" : "没有待处理";
   } else if (Array.isArray(json.repos)) {
     const flat = opened.flatMap((k) => (al[k].repos || []).filter((r) => r.open > 0).map((r) => ({ type: k, ...r })));
     flat.sort((x, y) => y.open - x.open);
