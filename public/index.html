@@ -1141,7 +1141,9 @@ function renderForks(json, days) {
       note.textContent = "只统计最近 100 个 fork";
     }
     const rows = (json.repos || []).filter((r) => (r.newForks || 0) > 0)
-      .sort((a, b) => (b.newForks || 0) - (a.newForks || 0) || (b.forks || 0) - (a.forks || 0));
+      // 同分时按窗口里最近那个 fork 排：累计 fork 是全生命周期的量，不该决定这张表的顺序
+      .sort((a, b) => (b.newForks || 0) - (a.newForks || 0)
+        || Date.parse(b.lastFork?.at || 0) - Date.parse(a.lastFork?.at || 0));
     if (!rows.length) return;
     const table = document.createElement("table");
     // 表里只放这一段窗口的量：累计 fork 是全生命周期的数，放进来会被当成窗口结果
