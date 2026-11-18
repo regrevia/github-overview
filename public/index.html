@@ -368,9 +368,9 @@
       </section>
 
       <section class="sec" id="sec-funnel" hidden>
-        <div class="head"><h2>漏斗 · 浏览近 14 天</h2></div>
+        <div class="head"><h2>漏斗</h2></div>
         <div class="stats">
-          <div><span>浏览</span><b id="f-views">—</b><em></em></div>
+          <div><span>浏览</span><b id="f-views">—</b><em id="f-views-sub"></em></div>
           <div><span>仓库主页</span><b id="f-home">—</b><em id="f-home-sub"></em></div>
           <div><span>npm 周下载</span><b id="f-npm">—</b><em id="f-npm-sub"></em></div>
         </div>
@@ -388,7 +388,7 @@
       </section>
 
       <section class="sec">
-        <div class="head"><h2>构成<span class="head-note">· 近 14 天</span></h2></div>
+        <div class="head"><h2>构成<span class="head-note" id="comp-note">· 各仓最近一次快照</span></h2></div>
         <div class="split">
           <div class="donut" id="donut"></div>
           <div class="ranks" id="ranks"></div>
@@ -663,14 +663,10 @@ function donut(node) {
   let parts = PATHS ? PATHS : [];
   if (!parts.length && !LIVE_SET) parts = [["0.6.14", 320, "--brand"], ["旧版本", 1137, "--machine"]];
   if (!parts.length) return emptyInto(node, "还没有页面数据");
-  // 分母用漏斗的总浏览，和「仓库主页占多少浏览」对得上；差额并进「其他页面」
-  const named = parts.filter(p => p[0] !== "其他页面");
-  const namedSum = named.reduce((s, p) => s + p[1], 0);
-  const total = Math.max(LIVE.funnel?.views ?? 0, namedSum);
-  const rest = total - namedSum;
-  // 路径合计可能已经超过浏览总数（GitHub 两个接口口径不严格相同），这时不再补「其他页面」，
-  // 否则图例相加会超过 100%
-  parts = rest > 0 ? [...named, ["其他页面", rest, "--label-secondary"]] : named;
+  // 占比只在这份热门榜内部算：页面榜是各仓最近一次同步拿到的前几个，
+  // 拿 14 天总浏览当分母会把两段时间混在一起，还会凭空补出一个「其他页面」
+  const total = parts.reduce((s, p) => s + p[1], 0);
+  if (!total) return emptyInto(node, "还没有页面数据");
   const R = 40, ST = 13, CIRC = 2 * Math.PI * R;
   const svg = el("svg", { viewBox: "0 0 104 104", role: "img", "aria-label": "页面访问占比" });
   svg.appendChild(el("circle", { cx: 52, cy: 52, r: R, fill: "none", stroke: cs.getPropertyValue("--border-l1").trim(), "stroke-width": ST }));
@@ -717,7 +713,7 @@ function ranks(node) {
   RANKS.forEach(([group, rows, note]) => {
     const box = document.createElement("div");
     const h3 = document.createElement("h3");
-    h3.textContent = group + " · 近 14 天";
+    h3.textContent = group + " · 最近一次快照";
     if (note) { const sp = document.createElement("span"); sp.className = "head-note"; sp.textContent = "· " + note; h3.appendChild(sp); }
     box.appendChild(h3);
     const ul = document.createElement("ul");
@@ -1188,6 +1184,8 @@ function renderFunnel(f) {
   if (!f || f.views == null) { sec.hidden = true; return; }
   sec.hidden = false;
   document.getElementById("f-views").textContent = fmt(f.views);
+  // 漏斗固定取最近 14 个完整日，和上面选的范围无关，窗口写在数字下面而不是标题上
+  document.getElementById("f-views-sub").textContent = `近 ${Math.min(LIVE.range?.covered || 14, 14)} 天`;
   document.getElementById("f-home").textContent = f.home == null ? "—" : fmt(f.home);
   document.getElementById("f-home-sub").textContent = f.home == null ? "" : Math.round((f.home / f.views) * 100) + "% 浏览";
   document.getElementById("f-npm").textContent = f.npm == null ? "—" : fmt(f.npm);

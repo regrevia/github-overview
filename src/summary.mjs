@@ -8,7 +8,8 @@ export function templateSummary(ctx) {
   // GitHub 只留 14 天，范围比历史长时说明覆盖了几天，不把 14 天的数说成 30 天
   const n = (x) => Number(x).toLocaleString("en-US");
   if (views == null && uniques == null) lines.push(`还没有访问记录。`);
-  else if (days === 1 && day) lines.push(`${String(day).slice(5)} 浏览 ${n(views ?? 0)}${uniques ? `；访客 ${n(uniques)} 是近 ${Math.min(covered || 14, 14)} 天去重的人数` : ""}。`);
+  // 1 天窗口的访客是这一天的去重，不是 14 天去重，别挂上 14 天
+  else if (days === 1 && day) lines.push(`${String(day).slice(5)} 浏览 ${n(views ?? 0)}${uniques ? `、访客 ${n(uniques)}（当天去重）` : ""}。`);
   else if (!uniques && !views) lines.push(`这段时间还没有访客。`);
   else {
     const span = ctx.span || Math.min(days, covered || days);
@@ -59,11 +60,14 @@ const dataSpan = (ctx) => Math.max(1, ctx.span ?? Math.min(ctx.days ?? 1, ctx.co
 // 用户数没有直接口径，只能拿几个独立信号折算后交叉验证：
 // GitHub 只给 14 天去重访客；npm 只给下载次数（含更新、重装、多机、CI、镜像）。
 // 把两路各自折成人数区间，再把中位平均成「大约多少人」，并保留区间，避免给出假的精确值。
-export function userEstimate({ uniques, npmWeek, covered, stars } = {}) {
-  const span = Math.min(Math.max(1, Number(covered) || 14), 14);
+export function userEstimate({ uniques, npmWeek, covered, uniqSpan, stars } = {}) {
+  // 1 天窗口的访客是当天去重，不是 14 天去重：折算用的跨度要跟着这个数走
+  const span = Math.min(Math.max(1, Number(uniqSpan) || Number(covered) || 14), 14);
   const u = Number(uniques) > 0 ? Number(uniques) : null;
   const npm = Number(npmWeek) > 0 ? Number(npmWeek) : null;
-  const gh = u ? { low: Math.round(u), high: Math.round((u * 30) / span) } : null;
+  // 单日去重不能按「每天都来」乘 30：一天的人只说明这一天有这么多人，
+  // 上面按一周来一次估，下面用这个跨度折到一个月
+  const gh = u ? { low: Math.round(u), high: Math.round((u * (span === 1 ? 7 : 30)) / span) } : null;
   // 3–10 次/人/周：一个开发者一周内更新、重装、多机各下载几次，CI 和镜像还会再放大
   const np = npm ? { low: Math.round(npm / 10), high: Math.round(npm / 3) } : null;
   if (!gh && !np) return null;
@@ -88,7 +92,9 @@ const estimateLine = (ctx) => {
   if (!e) return [];
   const n = (x) => Number(x).toLocaleString("en-US");
   const parts = [];
-  if (e.gh) parts.push(`GitHub 近 ${e.span} 天去重访客 ${n(e.gh.low)} 人，按同一批人在这段时间到访折算到一个月约 ${n(e.gh.high)} 人`);
+  if (e.gh) parts.push(e.span === 1
+    ? `GitHub ${mmdd(ctx.day)} 当天去重访客 ${n(e.gh.low)} 人，一天的数据只能说明这一天，按一周到访一次估一个月大约 ${n(e.gh.low)} 到 ${n(e.gh.high)} 人`
+    : `GitHub 近 ${e.span} 天去重访客 ${n(e.gh.low)} 人，按同一批人在这段时间到访折算到一个月约 ${n(e.gh.high)} 人`);
   if (e.npm) parts.push(`npm 周下载 ${n(ctx.npmWeek)} 次，按每人每周 3 到 10 次下载折算（更新、重装、多机、CI 和镜像重复都已含在这个倍率里）约 ${n(e.npm.low)} 到 ${n(e.npm.high)} 人`);
   return [`用户规模估算（问用户数、多少人在用时用这一条，先给约数再给依据，不要逐个数字复述）：约 ${n(e.point)} 人，区间 ${n(e.low)} 到 ${n(e.high)} 人。依据：${parts.join("；")}${e.stars ? `；stars ${n(e.stars)} 只作旁证，不单独换算` : ""}。这是估算，不能回答算不出来，也不能把 npm 下载次数直接说成人数`];
 };
@@ -96,12 +102,14 @@ const estimateLine = (ctx) => {
 const factLines = (ctx) =>
   [
     `范围：${ctx.scope || "本仓库"}。issue/PR/发版按图上 ${ctx.span ?? ctx.days} 天`,
-    `访客是近 ${Math.min(ctx.covered || 14, 14)} 天的去重人数（GitHub 只给这个长度）：${ctx.uniques ?? "未知"} 人`,
+    ctx.day
+      ? `访客是 ${mmdd(ctx.day)} 当天的去重人数（不是近 14 天）：${ctx.uniques ?? "未知"} 人`
+      : `访客是近 ${Math.min(ctx.covered || 14, 14)} 天的去重人数（GitHub 只给这个长度）：${ctx.uniques ?? "未知"} 人`,
     ...(dataSpan(ctx) < (ctx.span ?? ctx.days)
       ? [`图上选了 ${ctx.span ?? ctx.days} 天，但只有 ${dataSpan(ctx)} 天有数据；浏览 ${ctx.views ?? "未知"} 次、issue/PR 都只算这 ${dataSpan(ctx)} 天，不能说成近 ${ctx.span ?? ctx.days} 天`]
       : [`图上的区间是 ${ctx.span ?? ctx.days} 天，区间内浏览 ${ctx.views ?? "未知"} 次；浏览比访客多，因为同一个人可以看多次`]),
     `这两段的时间长度不同，写的时候分开说，不要合并成同一个「近 N 天」`,
-    `页面、来源、漏斗这几行只覆盖近 ${Math.min(ctx.covered || 14, 14)} 天，引用时必须带上「近 ${Math.min(ctx.covered || 14, 14)} 天」，不能当成图上 ${ctx.span ?? ctx.days} 天`,
+    `漏斗是近 ${Math.min(ctx.covered || 14, 14)} 天；页面和来源是各仓最近一次同步拿到的热门榜，GitHub 不给这些数字的时间跨度，引用时写「最近一次快照」，不要挂上「近 N 天」`,
     ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
     `近 ${dataSpan(ctx)} 天里外部 issue ${ctx.external.issues.length} 个、PR ${ctx.external.pulls.length} 个（只是这段时间新开的，不是全部）`,
     ...detailLines(ctx.external),
@@ -111,7 +119,7 @@ const factLines = (ctx) =>
     `stars 合计 ${ctx.stars}（当前总数），近 ${ctx.starGrowth?.span ?? ctx.days} 天新增 ${ctx.starGrowth?.delta ?? "—"}，总数和新增要分开说，新增要带上这几天，新增恰好等于总数时只报一次`,
     `npm 周下载 ${ctx.npmWeek ?? "未关联 npm"}`,
     ...estimateLine(ctx),
-    `最热页面（近 ${Math.min(ctx.covered || 14, 14)} 天）：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
+    `最热页面（各仓最近一次快照，不是图上这段时间）：${(ctx.paths || []).slice(0, 3).map((p) => `${p.p}（${p.n}）`).join("、") || "暂无"}`,
   ].join("\n");
 
 // AI 摘要只允许引用给定事实里的数字：对不上就退回模板，免得出现「个仓库」「约 1.2 万」这种错数

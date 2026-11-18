@@ -91,8 +91,16 @@ export function series(slice, days, npmDaily = {}) {
       d.setUTCDate(d.getUTCDate() - back);
       return d.toISOString().slice(0, 10);
     };
+    // 当天那一格是采集占位：四个计数全 0 说明 GitHub 还没结算，不是这天真没人来。
+    // 最多往回找 4 天，全是 0 就照旧报这一天，免得把长时间断采写成「历史上的某一天」
+    const settled = (row) => row && ["v", "u", "c", "cu"].some((f) => Number(row[f]) > 0);
     let k = pick(1);
     if (!slice.days[k]) k = pick(2);
+    else if (!settled(slice.days[k])) {
+      for (const back of [2, 3, 4]) {
+        if (settled(slice.days[pick(back)])) { k = pick(back); break; }
+      }
+    }
     const row = slice.days[k] || {};
     return [{ d: k, v: row.v ?? null, u: row.u ?? null, c: row.c ?? null, cu: row.cu ?? null, n: npmDaily[k] ?? slice.npm?.[k] ?? null }];
   }

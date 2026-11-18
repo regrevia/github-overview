@@ -246,8 +246,11 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       const pick = (back) => new Date(today.getTime() - back * 864e5).toISOString().slice(0, 10);
+      // 和 store.series 同一套落点：当天那格全 0 是还没结算，别把它当「这一天没人来」
+      const settled = (d) => slices.some(({ s }) => ["v", "u", "c", "cu"].some((f) => Number(s.days?.[d]?.[f]) > 0));
       let k = pick(1);
       if (!slices.some(({ s }) => s.days?.[k])) k = pick(2);
+      else if (!settled(k)) k = [2, 3, 4].map(pick).find(settled) || k;
       const cell = { d: k, v: null, u: null, c: null, cu: null, n: null };
       for (const { s } of slices) {
         const row = s.days?.[k];
@@ -629,6 +632,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           day: single ? single.d : null,
           covered: data.range.covered,
           uniques: single ? single.u : data.totals.uniques,
+          // 1 天窗口的访客是当天去重，不能按 14 天去重去折算用户规模
+          uniqSpan: single ? 1 : Math.min(data.range.covered || 14, 14),
           views: single ? single.v : winViews,
           external: data.contributions,
           stars: data.repo.stars,
@@ -820,8 +825,11 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
             topRepos,
             days: windowDays,
             covered: data.range.covered,
-            uniques: data.totals.uniques,
-            views: data.totals.views,
+            day: data.range.days === 1 ? data.series[0]?.d ?? null : null,
+            // 单日窗口的访客是当天去重，估算跨度得跟着它走，否则会被当成 14 天去重量
+            uniqSpan: data.range.days === 1 ? 1 : Math.min(data.range.covered || 14, 14),
+            uniques: data.range.days === 1 ? data.series[0]?.u ?? data.totals.uniques : data.totals.uniques,
+            views: data.range.days === 1 ? data.series[0]?.v ?? data.totals.views : data.totals.views,
             external: data.contributions,
             impact: data.impact,
             funnel: data.funnel,
