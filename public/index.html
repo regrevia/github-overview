@@ -991,10 +991,12 @@ function drawOverview() {
   const k = OV_SORT === "u" ? "uniques" : "npm";
   const projNote = document.getElementById("proj-note");
   if (projNote) {
+    // 访客只有 GitHub 的 14 天去重值，下载才是这段窗口的逐日合计：
+    // 两个长度不同的数不能挂在一个「近 N 天」后面，各自把口径说全
     const day = DATA[DATA.length - 1]?.d || "";
-    const uSpan = currentRange === 1 ? day : "近 14 天";
-    const nSpan = currentRange === 1 ? day : `近 ${Math.min(currentRange, LIVE.range?.covered || currentRange)} 天`;
-    projNote.textContent = `· 访客 ${uSpan} · 下载 ${nSpan}`;
+    projNote.textContent = currentRange === 1
+      ? `· 访客和下载都取自 ${day} 当天`
+      : `· 访客近 14 天去重 · 下载近 ${Math.min(currentRange, LIVE.range?.covered || currentRange)} 天`;
   }
   const emptyWord = OV_SORT === "u" ? "没有访客" : "没有下载";
   const all = [...OVERVIEW].sort((a, b) => (b[k] ?? 0) - (a[k] ?? 0));
