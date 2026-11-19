@@ -1,7 +1,21 @@
 const API = "https://api.github.com";
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export function makeGithub(token, { owner, name }) {
   async function gh(path, { method = "GET", body, accept } = {}) {
+    // 限流是暂时的，重新发一次就好；401/404 重发也没用，所以只挑 403/429，
+    // 且只对没有副作用的 GET 重试，最多两次，等时夹在 3 秒内（同步一次上百个请求，不能卡住）
+    for (let attempt = 0; ; attempt++) {
+      const res = await once(path, { method, body, accept });
+      const limited = res.status === 429 || res.status === 403;
+      if (!limited) return res.data;
+      if (method !== "GET" || attempt >= 2) throw res.err;
+      await sleep(Math.min(res.retryAfter ?? 800 * (attempt + 1), 3000));
+    }
+  }
+
+  async function once(path, { method, body, accept }) {
     const res = await fetch(API + path, {
       method,
       headers: {
@@ -23,9 +37,15 @@ export function makeGithub(token, { owner, name }) {
     if (!res.ok) {
       const err = new Error(`${method} ${path} → ${res.status} ${data?.message || ""}`.trim());
       err.status = res.status;
-      throw err;
+      const ra = Number(res.headers.get("retry-after"));
+      const exhaust = res.headers.get("x-ratelimit-remaining") === "0";
+      // 把「什么时候能好」交给调用方：只有明确是限流才带等待时长
+      if (!(res.status === 429 || res.status === 403) ) throw err;
+      if (!Number.isFinite(ra) && !exhaust) throw err;
+      err.retryAfter = Number.isFinite(ra) ? Math.max(ra * 1000, 250) : 1500;
+      return { data: null, status: res.status, retryAfter: err.retryAfter, err };
     }
-    return data;
+    return { data, status: res.status };
   }
 
   const repoPath = `/repos/${owner}/${name}`;
