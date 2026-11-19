@@ -53,6 +53,10 @@ function makeWindow(url) {
     return { action: "deny" };
   });
   win.on("closed", () => { win = null; });
+  // 打包后窗口异常退出时也要留痕，否则只剩一句 all closed
+  win.webContents.on("render-process-gone", (_e, d) => log("renderer gone", JSON.stringify(d)));
+  win.webContents.on("did-fail-load", (_e, code, desc, url) => log("did-fail-load", code, desc, url));
+  win.webContents.on("did-finish-load", () => log("did-finish-load"));
 }
 
 app.whenReady().then(async () => {

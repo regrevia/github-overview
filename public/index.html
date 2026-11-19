@@ -145,8 +145,8 @@
   .cmp .ver { font-size: 12px; color: var(--label-secondary); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cmp .v { text-align: right; font-variant-numeric: tabular-nums; }
   .cmp .d { text-align: right; font-size: 12px; color: var(--label-secondary); font-variant-numeric: tabular-nums; }
-  .repo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
-  .repo-grid ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .repo-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 28px; }
+  .repo-grid ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
   .repo-grid li.muted { grid-template-columns: 1fr; font-size: 13px; }
   .cmp li.muted { grid-template-columns: 1fr; font-size: 13px; }
   @media (max-width: 560px) {
@@ -156,7 +156,8 @@
     .cmp .ver { grid-column: 1; grid-row: 2; }
     .cmp .v { grid-column: 2; grid-row: 2; }
   }
-  .repo-grid li { display: grid; grid-template-columns: 168px 1fr 56px; align-items: center; gap: 10px; font-size: 16px; cursor: pointer; }
+  /* 名字列给上限而不是固定宽，窗口窄下来整行才收得住，不会顶出容器 */
+  .repo-grid li { display: grid; grid-template-columns: minmax(0, 168px) minmax(0, 1fr) 56px; align-items: center; gap: 10px; font-size: 16px; cursor: pointer; }
   .repo-grid li:hover .k { color: var(--label-primary); }
   .repo-grid .k { color: var(--label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .repo-grid .track { height: 6px; border-radius: 2px; background: var(--bg-layer-2); overflow: hidden; }
@@ -202,8 +203,9 @@
   .gate-card button.primary { width: 100%; height: 34px; border: 0; border-radius: 8px; background: var(--brand); color: #fff;
     font-size: 13px; font-weight: 500; cursor: pointer; }
   .gate-card button.primary:disabled { opacity: .55; cursor: default; }
-  .gate-alt { margin-top: 14px; }
-  .gate-alt.sep { padding-top: 14px; border-top: 1px solid var(--border-l1); }
+  .gate-alt { display: block; margin-top: 14px; }
+  /* 自己的分隔线，别借用页头那根 .sep（那是 1px 竖线，会把这里挤成一列字） */
+  .gate-alt.sep-top { padding-top: 14px; border-top: 1px solid var(--border-l1); }
   .gate-alt input { width: 100%; height: 30px; background: var(--bg-layer-1); border: 1px solid var(--border-l1); border-radius: 8px;
     color: var(--label-primary); font: inherit; font-size: 12px; padding: 0 10px; }
   .gate-alt a { color: var(--brand); text-decoration: none; }
@@ -1714,13 +1716,13 @@ function gateOpen(state) {
   main.textContent = "";
   const browser = state.loginMode === "device" || state.loginMode === "gh";
   if (browser) {
-    lead.textContent = "登录你自己的账号，数据只存在这台电脑上。";
+    lead.textContent = "登录你的账号，数据只存在这台电脑上。";
   } else {
     lead.textContent = "粘贴访问令牌就能绑上。";
   }
   // 令牌输入是兜底，不是可选项：浏览器这条路走不通时它就顶上来，别把它藏掉
   const alt = document.querySelector(".gate-alt");
-  if (alt) alt.classList.toggle("sep", browser);
+  if (alt) alt.classList.toggle("sep-top", browser);
   const altLead = document.getElementById("gate-alt-lead");
   if (altLead) altLead.hidden = !browser;
   const btn = document.createElement("button");

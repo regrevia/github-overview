@@ -38,14 +38,17 @@ export async function whoami(token) {
 // 绑定状态：返回谁在用、token 从哪来，但绝不回传 token 本身
 export async function authState() {
   const cfg = readConfig();
-  const token = resolveToken(cfg);
-  const source = process.env.GITHUB_TOKEN || process.env.GH_TOKEN ? "env" : cfg.token ? "config" : token ? "gh" : "none";
-  const me = await whoami(token);
+  // 只有用户自己给过的凭据才算绑定：环境变量或这里存下的 token。
+  // 本机 gh 里躺着的登录不算——别人在这台电脑上打开，不该直接看到前一个人的账号。
+  const fromEnv = Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN);
+  const explicit = fromEnv || Boolean(cfg.token);
+  const me = explicit ? await whoami(resolveToken(cfg)) : null;
+  const source = !me ? "none" : fromEnv ? "env" : "config";
   return {
     bound: Boolean(me),
     login: me?.login || null,
     name: me?.name || "",
-    source: me ? source : "none",
+    source,
     deviceFlow: Boolean(clientId(cfg)),
     // 前端据此决定主按钮走哪条路：浏览器授权 / 粘贴访问令牌
     loginMode: loginMode(cfg),
@@ -139,6 +142,13 @@ export async function adoptAccount(token, login) {
   delete next.npm;
   writeConfig(next);
   return { added: repos.length, total: repos.length };
+}
+
+// 同步、不联网：只回答「用户自己给过凭据没有」，供每个请求快速判断要不要给数据。
+// 本机 gh 里的登录不算：那不是用户在这个界面里授权过的身份。
+export function boundExplicit(cfg = readConfig()) {
+  if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) return true;
+  return Boolean(cfg.token);
 }
 
 // 有没有 git 命令行：有就能让 gh 自己开浏览器做设备码授权，不用我们注册 OAuth App

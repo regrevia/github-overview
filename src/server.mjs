@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { join, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readConfig, writeConfig, resolveToken, parseRepo, normalizeConfig } from "./config.mjs";
-import { authState, deviceStart, devicePoll, saveToken, adoptAccount, whoami, loginStart, loginPoll } from "./auth.mjs";
+import { authState, boundExplicit, deviceStart, devicePoll, saveToken, adoptAccount, whoami, loginStart, loginPoll } from "./auth.mjs";
 import { makeGithub } from "./github.mjs";
 import { makeNpm } from "./npm.mjs";
 import { loadStore, saveStore, repoStore, mergeTraffic, mergeNpm, mergeStars, series, storedDays } from "./store.mjs";
@@ -707,10 +707,11 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         return send(200, out);
       }
       if (url.pathname === "/api/repos") {
-        return send(200, targets.length ? repoRows() : []);
+        return send(200, targets.length && boundExplicit() ? repoRows() : []);
       }
-      // 没绑账号时各接口给空载荷，前端据此只显示绑定页
-      if (!targets.length && /^\/api\/(data|summary|ask|sync)$/.test(url.pathname)) {
+      // 没绑账号（或只剩本机 gh 的登录，用户自己没授权过）时给空载荷，前端只显示绑定页
+      const bound = boundExplicit();
+      if ((!targets.length || !bound) && /^\/api\/(data|summary|ask|sync)$/.test(url.pathname)) {
         return send(200, { empty: true, needsBinding: true, totals: {}, series: [], range: { days } });
       }
       if (url.pathname === "/api/data") {
