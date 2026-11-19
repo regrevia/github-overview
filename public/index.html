@@ -1132,7 +1132,7 @@ function renderImpacts(list) {
   const rank = [...rest].sort((a, b) => (b.delta?.views ?? -1e9) - (a.delta?.views ?? -1e9)).slice(0, 8);
   for (const r of rank) {
     const li = document.createElement("li");
-    li.title = `${r.key} · 下载日均 ${r.before?.npm?.avg ?? "—"} → ${r.after?.npm?.avg ?? "—"}`;
+    li.title = `${r.key} · 下载日均 ${avgNum(r.before?.npm?.avg)} → ${avgNum(r.after?.npm?.avg)}`;
     const k = document.createElement("span"); k.className = "k"; k.textContent = r.name;
     const ver = document.createElement("span"); ver.className = "ver"; ver.textContent = `${bareTag(r.version)} · ${String(r.at).slice(5)}`;
     const v = document.createElement("span"); v.className = "v"; v.textContent = `${avgNum(r.before.views.avg)} → ${avgNum(r.after.views.avg)}`;
@@ -1248,7 +1248,7 @@ function renderFunnel(f) {
   document.getElementById("f-npm").textContent = f.npm == null || fNoPkg ? "—" : fmt(f.npm);
   // 下载和浏览取同一段 14 天，只给日均，不跨窗口算倍数
   const fDays = Math.min(LIVE.range?.covered || 14, 14);
-  document.getElementById("f-npm-sub").textContent = f.npm == null || fNoPkg ? "" : `日均 ${fmt(Math.round(f.npm / fDays))} 次`;
+  document.getElementById("f-npm-sub").textContent = f.npm == null || fNoPkg ? "" : `日均 ${avgNum(f.npm / fDays)} 次`;
 }
 
 function applyLive(json) {
