@@ -115,11 +115,12 @@ const factLines = (ctx) =>
       ? [`图上选了 ${ctx.span ?? ctx.days} 天，但只有 ${dataSpan(ctx)} 天有数据；浏览 ${ctx.views ?? "未知"} 次、issue/PR 都只算这 ${dataSpan(ctx)} 天，不能说成近 ${ctx.span ?? ctx.days} 天`]
       : [`图上的区间是 ${ctx.span ?? ctx.days} 天，区间内浏览 ${ctx.views ?? "未知"} 次；浏览比访客多，因为同一个人可以看多次`]),
     `这两段的时间长度不同，写的时候分开说，不要合并成同一个「近 N 天」`,
-    `漏斗是近 ${Math.min(ctx.covered || 14, 14)} 天；页面和来源是各仓最近一次同步拿到的热门榜，GitHub 不给这些数字的时间跨度，引用时写「最近一次快照」，不要挂上「近 N 天」`,
+    `漏斗是固定近 ${Math.min(ctx.covered || 14, 14)} 天的一段转化；页面和来源是各仓最近一次同步拿到的热门榜，GitHub 不给这两个数字的时间跨度，引用时写「最近一次快照」，不要挂上「近 N 天」`,
     ...(ctx.topRepos ? [`全站 ${ctx.allTotal ?? "未知"} 人；最热：${ctx.topRepos.map((r) => `${r.name}（${r.u}）`).join("、")}`] : []),
     `近 ${dataSpan(ctx)} 天里外部 issue ${ctx.external.issues.length} 个、PR ${ctx.external.pulls.length} 个（只是这段时间新开的，不是全部）`,
     ...detailLines(ctx.external),
-    ...(ctx.funnel ? [`漏斗（近 ${Math.min(ctx.covered || 14, 14)} 天）：浏览 ${ctx.funnel.views ?? "—"} → 仓库主页 ${ctx.funnel.home ?? "—"} → npm 下载 ${ctx.funnel.npm ?? "—"}`] : []),
+    // 浏览和下载都取同一段 14 天，别一个写「近 14 天」一个写「周」
+    ...(ctx.funnel ? [`漏斗（浏览和下载都是近 ${Math.min(ctx.covered || 14, 14)} 天）：浏览 ${ctx.funnel.views ?? "—"} → 仓库主页 ${ctx.funnel.home ?? "—"} → npm 下载 ${ctx.funnel.npm == null ? "—（这个仓没有 npm 包）" : ctx.funnel.npm}`] : []),
     ...(ctx.impacts?.length ? [`各仓最近发版日均浏览：${ctx.impacts.slice(0, 6).map((i) => `${i.name} ${i.before?.views?.avg ?? "—"}→${i.after?.views?.avg ?? "—"}`).join("、")}`] : []),
     ...(ctx.impact ? [`最近发版 ${ctx.impact.name ? ctx.impact.name + " " : ""}${ctx.impact.version}（${mmdd(ctx.impact.at)}）：前 7 天日均浏览 ${ctx.impact.before.views?.avg ?? "—"}、下载 ${ctx.impact.before.npm?.avg ?? "—"}，后 7 天 ${ctx.impact.after.views?.avg ?? "—"}、${ctx.impact.after.npm?.avg ?? "—"}`] : []),
     `stars 合计 ${ctx.stars}（当前总数），近 ${ctx.starGrowth?.span ?? ctx.days} 天新增 ${ctx.starGrowth?.delta ?? "—"}，总数和新增要分开说，新增要带上这几天，新增恰好等于总数时只报一次`,

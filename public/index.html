@@ -1282,10 +1282,12 @@ function applyLive(json) {
   const relCap = repo.fullName === "全部仓库" ? 120 : 200;
   const relCapped = rels.length >= relCap;
   document.getElementById("k-rel").textContent = relCapped ? rels.length + "+" : rels.length;
+  const relSpan = repo.fullName === "全部仓库"
+    ? (() => { const first = label(rels[rels.length - 1].at), last = label(rels[0].at); return first === last ? last : first + " → " + last; })()
+    : (() => { const first = bareTag(rels[rels.length - 1].tag), last = bareTag(rels[0].tag); return first === last ? last : first + " → " + last; })();
+  // 截断时说清这个区间只是最近若干个，别让人把 11-07 当成窗口起点
   document.getElementById("k-rel-sub").textContent = rels.length
-    ? (repo.fullName === "全部仓库"
-      ? (() => { const first = label(rels[rels.length - 1].at), last = label(rels[0].at); return first === last ? last : first + " → " + last; })()
-      : (() => { const first = bareTag(rels[rels.length - 1].tag), last = bareTag(rels[0].tag); return first === last ? last : first + " → " + last; })())
+    ? (relCapped ? "最近 " + rels.length + " 个 · " + relSpan : relSpan)
     : "本窗口无发版";
   const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open");
   document.getElementById("s-issues").textContent = ic + " 个";

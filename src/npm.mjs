@@ -62,17 +62,8 @@ export function makeNpm(pkg) {
         return [];
       }
     },
-    async perVersion() {
-      const list = await this.versions();
-      const recent = list.slice(0, 3);
-      const out = [];
-      for (const v of recent) {
-        try {
-          const r = await getJson(`${POINT}/last-week/${encodeURIComponent(safe + "@" + v.version)}`);
-          out.push({ version: v.version, downloads: r.downloads ?? 0 });
-        } catch { /* unpublished or scoped edge case */ }
-      }
-      return out;
-    },
+    // 曾有 perVersion(): 按版本查 last-week 下载。上游现在对 `pkg@ver` 一律回
+    // {"error":"package x@1.2.3 not found"}，那条腿永远只能是空数组，已删除。
+    // 需要逐版本时间线就用 versions()，它读 registry 文档里的 time 表。
   };
 }

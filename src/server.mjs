@@ -61,18 +61,17 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       }
     }
     s.meta.npmOwned = npmOk;
-    let perVers = null, published = null;
+    let published = null;
     if (npmOk) {
       // npm registry 的几个接口互相独立，一起发比排队快一半
-      const [npmRange, week, pv, pub] = await Promise.all([
+      const [npmRange, week, pub] = await Promise.all([
         t.npm.range(new Date(Date.now() - 400 * 864e5), new Date()).catch(() => null),
         t.npm.week().catch(() => null),
-        t.npm.perVersion().catch(() => null),
         t.npm.versions().catch(() => null),
       ]);
       if (Array.isArray(npmRange)) mergeNpm(s, npmRange);
       if (Number.isFinite(week)) s.meta.npmWeek = week;
-      perVers = pv; published = pub;
+      published = pub;
     }
     const prefix = `/${t.owner}/${t.name}`;
     s.meta.repo = repoInfo || s.meta.repo || { owner: t.owner, name: t.name };
@@ -89,7 +88,10 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     if (activity) s.meta.activity = activity;
     if (openWork) s.meta.openWork = openWork;
     if (activity || openWork) s.meta.contribAt = new Date().toISOString();
-    if (perVers) s.meta.npmVers = perVers;
+    // 版本时间线只来自 registry 的 time 表：逐版本下载端点已经不可用
+    if (Array.isArray(published) && published.length) {
+      s.meta.npmVers = published.map((v) => ({ v: v.version, at: v.at, url: null }));
+    }
     if (!npmOk) s.meta.npmVers = [];
     const merged = new Map((s.releases || []).map((r) => [r.tag, r]));
     for (const r of releases || []) merged.set(r.tag_name, { tag: r.tag_name, at: r.published_at, url: r.html_url });
@@ -661,6 +663,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           stars: data.repo.stars,
           starGrowth: data.starGrowth,
           npmWeek: data.totals.npmWeek,
+          // 漏斗自带 14 天窗口；没有 npm 包的仓把下载写成 null，别拿 0 冒充
+          funnel: data.funnel ? { ...data.funnel, npm: data.repo?.npmPkg === null ? null : data.funnel.npm } : null,
           paths: data.paths,
           scope: key === ALL ? `你的 ${targets.length} 个仓库` : key,
         };
