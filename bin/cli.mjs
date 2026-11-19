@@ -2,9 +2,20 @@
 import { readConfig, writeConfig, parseRepo, normalizeConfig, resolveToken, CONFIG_PATH } from "./../src/config.mjs";
 import { createApp } from "./../src/server.mjs";
 import { startLoop } from "./../src/loop.mjs";
+import { readFileSync } from "node:fs";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0] && !argv[0].startsWith("-") ? argv[0] : "start";
+// --help / --version 走完就退出，别当成 start 把服务拉起来
+if (argv.includes("--help") || argv.includes("-h") || cmd === "help") {
+  usage();
+  process.exit(0);
+}
+if (argv.includes("--version") || argv.includes("-v")) {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  console.log(pkg.version);
+  process.exit(0);
+}
 const flag = (...names) => {
   for (const n of names) {
     const i = argv.indexOf(n);
@@ -108,6 +119,7 @@ try {
     const app = createApp({ repos, days, intervalHours, contribMinutes, cfg });
     const addr = await app.listen(port);
     console.log(`github-overview 在 http://127.0.0.1:${addr.port}`);
+    if (addr.moved) console.log(`端口 ${port} 被占用了，改用 ${addr.port}`);
     if (repos.length) console.log(`已绑定 ${cfg.user}，${repos.length} 个仓库`);
     else console.log(`还没绑定账号，打开 http://127.0.0.1:${addr.port} 用浏览器登录一次`);
     // 同步节奏放在 src/loop.mjs，桌面端跑的也是这一份

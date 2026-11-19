@@ -1068,7 +1068,26 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     reload,
     count: () => targets.length,
     listen(port = 4317, host = "127.0.0.1") {
-      return new Promise((resolve) => server.listen(port, host, () => resolve(server.address())));
+      // 端口被占时往上找一个空的：npx 起第二次不该直接崩在 listen 上
+      return new Promise((resolve, reject) => {
+        let tries = 0;
+        const attempt = (p) => {
+          const onError = (e) => {
+            server.removeListener("listening", onReady);
+            if (e.code === "EADDRINUSE" && port !== 0 && tries < 12) { tries += 1; attempt(p + 1); return; }
+            reject(e);
+          };
+          const onReady = () => {
+            server.removeListener("error", onError);
+            const addr = server.address();
+            resolve({ ...addr, moved: port !== 0 && addr.port !== port });
+          };
+          server.once("error", onError);
+          server.once("listening", onReady);
+          server.listen(p, host);
+        };
+        attempt(port);
+      });
     },
   };
 }
