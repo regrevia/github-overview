@@ -288,7 +288,6 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     const releases = [];
     const issues = [];
     const pulls = [];
-    const npmVersions = [];
     const alertKeys = ["dependabot", "codeScanning", "secretScanning"];
     const alerts = { dependabot: { available: false, open: 0 }, codeScanning: { available: false, open: 0 }, secretScanning: { available: false, open: 0 } };
     for (const { t, s } of slices) {
@@ -308,7 +307,6 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       for (const rel of s.releases || []) releases.push({ ...rel, repo: t.key });
       for (const i of m.activity?.issues || []) issues.push({ ...i, repo: t.key });
       for (const p of m.activity?.pulls || []) pulls.push({ ...p, repo: t.key });
-      for (const v of m.npmVers || []) npmVersions.push({ ...v, repo: t.key });
       for (const k of alertKeys) {
         const cell = m.alerts?.[k];
         if (cell?.available) {
@@ -418,7 +416,6 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
         };
       })(),
       releases: releases.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 120),
-      npmVersions,
       impact: windowDays < 7 ? null : (() => {
         // 主卡也要带上仓名，否则只有一个版本号，看不出是哪个仓
         const all = slices.map(({ t, s }) => {
@@ -569,7 +566,6 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       },
       referrers: meta.referrers || [],
       releases: s.releases || [],
-      npmVersions: meta.npmVers || [],
       impact: windowDays < 7 ? null : (() => {
         const im = impactOf(s);
         return im && im.at >= rows[0]?.d ? im : null;

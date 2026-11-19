@@ -65,7 +65,7 @@ GitHub 自带的 traffic 只给 14 天，而且只有浏览和克隆，看不到
 | --- | --- | --- |
 | GitHub traffic | 浏览、克隆、页面、来源 | 每日 + 快照 |
 | GitHub API | 外部 issue、PR | 按更新时间拉取，按创建或合并、关闭时间入窗 |
-| GitHub stargazers | 星数增长 | 每个 star 的时间（分页取最近 1000） |
+| GitHub stargazers | 星数增长 | 每个 star 的时间（取最近 1000 个，更早的不计） |
 | GitHub alerts | 安全告警 | 快照 |
 | npm | 每日下载、版本时间 | 每日（约 2–3 天延迟） |
 

@@ -64,15 +64,23 @@ export function makeGithub(token, { owner, name }) {
       };
     },
     // 星标历史：带 star+json 才回 starred_at，据此算任意窗口的净增
+    // 列表按加星时间从早到晚，翻页上限 10 页就是 1000 条；星多的仓只有翻到最后几页
+    // 才拿得到最近的加星，否则窗口净增会少算成 0
     async stargazers() {
-      const out = [];
-      for (let page = 1; page <= 10; page++) {
+      const grab = async (page) => {
         const rows = await gh(`${repoPath}/stargazers?per_page=100&page=${page}`, { accept: "application/vnd.github.star+json" });
-        if (!Array.isArray(rows) || !rows.length) break;
-        for (const r of rows) if (r.starred_at) out.push(String(r.starred_at).slice(0, 10));
-        if (rows.length < 100) break;
-      }
-      return out;
+        return Array.isArray(rows) ? rows : [];
+      };
+      const first = await grab(1);
+      // 拿不到总数就退回首 10 页（星少的仓本来就是那一两页），不至于整块没数
+      const total = first.length < 100 ? first.length : ((await gh(repoPath).catch(() => null))?.stargazers_count || 1000);
+      const pages = Math.max(1, Math.ceil(total / 100));
+      const from = Math.max(1, pages - 9);
+      const all = from === 1 ? [first] : [];
+      for (let page = from === 1 ? 2 : from; page <= pages; page++) all.push(await grab(page));
+      const out = [];
+      for (const rows of all) for (const r of rows) if (r.starred_at) out.push(String(r.starred_at).slice(0, 10));
+      return out.sort();
     },
     // traffic endpoints need push access, and only keep 14 rolling days
     async views() { return gh(`${repoPath}/traffic/views?per=day`); },
