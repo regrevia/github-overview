@@ -142,7 +142,11 @@ try {
     if (addr.moved) console.log(`端口 ${port} 被占用了，改用 ${addr.port}`);
     if (repos.length) console.log(`已绑定 ${cfg.user}，${repos.length} 个仓库`);
     else console.log(`还没绑定账号，打开 http://127.0.0.1:${addr.port} 用浏览器登录一次`);
-    if (lan) for (const ip of lanAddresses()) console.log(`手机填 http://${ip}:${addr.port}`);
+    if (lan) {
+      for (const ip of lanAddresses()) console.log(`手机填 http://${ip}:${addr.port}`);
+      // 手机连不上时不用改任何配置，数据线插上就能用这条
+      console.log(`连不上就把手机插上跑 adb reverse tcp:${addr.port} tcp:${addr.port}，手机上填 http://127.0.0.1:${addr.port}`);
+    }
     // 同步节奏放在 src/loop.mjs，桌面端跑的也是这一份
     startLoop(app, { intervalHours, contribMinutes, onLog: (line) => console.log(line) });
     await new Promise(() => {});
