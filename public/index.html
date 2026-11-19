@@ -128,11 +128,12 @@
   .split { display: grid; grid-template-columns: 168px 1fr; gap: 32px; align-items: start; margin-top: 12px; }
   .donut { display: flex; flex-direction: column; gap: 10px; }
   .donut svg { width: 104px; height: 104px; margin: 0 auto; }
-  .donut-legend { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-  .donut-legend div { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
-  .donut-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--label-secondary); white-space: nowrap; }
+  .donut-legend { display: flex; flex-direction: column; gap: 4px; font-size: 12px; min-width: 0; }
+  .donut-legend div { display: flex; align-items: center; gap: 6px; justify-content: space-between; min-width: 0; }
+  .donut-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--label-secondary); white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+  .donut-legend .nm { display: block; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .donut-legend i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
-  .donut-legend b { font-weight: 500; }
+  .donut-legend b { font-weight: 500; flex: none; }
   .empty { font-size: 12px; color: var(--label-secondary); }
   .ranks { display: grid; gap: 16px; }
   .ranks h3 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--label-secondary); }
@@ -262,10 +263,8 @@
     .donut { flex-direction: row; align-items: center; gap: 16px; }
     .donut { width: 100%; max-width: 100%; overflow: hidden; }
     .donut svg { margin: 0; flex: none; width: 84px; height: 84px; }
-    .donut-legend { flex: 1; min-width: 0; overflow: hidden; }
-    .donut-legend div { min-width: 0; }
-    .donut-legend span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-    .donut-legend b { flex: none; }
+    .donut-legend { flex: 1; overflow: hidden; }
+    .donut-legend span { flex: 1 1 auto; }
     .stats { grid-template-columns: 1fr 1fr; gap: 14px; }
     .stats b { font-size: 18px; }
     thead th:nth-child(3), tbody td:nth-child(3) { display: none; }
@@ -695,6 +694,7 @@ const shortPath = p => {
     : /^readme/i.test(q) ? "README"
     : /^actions/.test(q) ? "actions 页"
     : /^blob\//.test(q) ? "文件页"
+    : /^tree\//.test(q) ? "目录页"
     : p;
 };
 
@@ -735,8 +735,11 @@ function donut(node) {
     const left = document.createElement("span");
     const sw = document.createElement("i");
     sw.style.background = `var(${p[2]})`;
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = p[0];
     left.appendChild(sw);
-    left.appendChild(document.createTextNode(p[0]));
+    left.appendChild(nm);
     const right = document.createElement("b");
     right.textContent = Math.round((p[1] / total) * 100) + "%";
     row.appendChild(left); row.appendChild(right);
@@ -929,6 +932,11 @@ try {
 // 实时数据：拿不到就继续用内置样例，页面始终能看
 const label = iso => String(iso).slice(5, 10);
 const mmdd = iso => label(iso);
+// 日均同一个数位上取值：三位以上给整数加千分位，再小才留一位小数，
+// 不然「1,819 → 355.4」左右两边位数不一致，像两条不同口径的数
+const avgNum = (v) => v == null ? "—"
+  : Math.abs(v) >= 100 ? Math.round(v).toLocaleString("en")
+  : (Math.round(v * 10) / 10).toLocaleString("en");
 
 function renderImpact(it) {
   const sec = document.getElementById("sec-impact");
@@ -938,8 +946,7 @@ function renderImpact(it) {
   }
   sec.hidden = false;
   const pct = (v) => pctText(v);
-  // 日均保留一位小数，四位数以上加千分位
-  const num = (v) => (v == null ? "—" : (Math.round(v * 10) / 10).toLocaleString("en"));
+  const num = avgNum;
   const show = (k, id, sub) => {
     const b = it.before?.[k]?.avg;
     const a = it.after?.[k]?.avg;
@@ -1128,7 +1135,7 @@ function renderImpacts(list) {
     li.title = `${r.key} · 下载日均 ${r.before?.npm?.avg ?? "—"} → ${r.after?.npm?.avg ?? "—"}`;
     const k = document.createElement("span"); k.className = "k"; k.textContent = r.name;
     const ver = document.createElement("span"); ver.className = "ver"; ver.textContent = `${bareTag(r.version)} · ${String(r.at).slice(5)}`;
-    const v = document.createElement("span"); v.className = "v"; v.textContent = `${fmt(r.before.views.avg)} → ${fmt(r.after.views.avg)}`;
+    const v = document.createElement("span"); v.className = "v"; v.textContent = `${avgNum(r.before.views.avg)} → ${avgNum(r.after.views.avg)}`;
     const d = document.createElement("span"); d.className = "d"; d.textContent = pctText(r.delta?.views);
     li.append(k, ver, v, d);
     li.addEventListener("click", () => switchRepo(r.key));
