@@ -8,8 +8,8 @@ android {
     applicationId = "com.regrevia.githuboverview"
     minSdk = 24
     targetSdk = 35
-    versionCode = 24
-    versionName = "0.2.4"
+    versionCode = 26
+    versionName = "0.2.6"
   }
 
   buildTypes {
