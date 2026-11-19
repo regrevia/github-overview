@@ -309,7 +309,7 @@
     </div>
     <div class="kpi">
       <div class="kpi-label">外部贡献</div>
-      <div class="kpi-value" id="k-contrib">2</div>
+      <div class="kpi-value" id="k-contrib">—</div>
       <div class="kpi-sub" id="k-contrib-sub">—</div>
     </div>
     <div class="kpi">
@@ -319,12 +319,12 @@
     </div>
     <div class="kpi">
       <div class="kpi-label">stars</div>
-      <div class="kpi-value" id="k-stars">9</div>
+      <div class="kpi-value" id="k-stars">—</div>
       <div class="kpi-sub" id="k-forks"></div>
     </div>
     <div class="kpi">
       <div class="kpi-label">发版</div>
-      <div class="kpi-value" id="k-rel">4</div>
+      <div class="kpi-value" id="k-rel">—</div>
       <div class="kpi-sub" id="k-rel-sub"></div>
     </div>
   </section>
@@ -668,12 +668,9 @@ function npmChart(node, days) {
   node.appendChild(svg);
 }
 
-let RANKS = [
-  ["看了哪些页面", [["仓库主页", 397], ["issues 列表", 15], ["README", 2], ["actions 页", 1]]]
-];
+let RANKS = [];
 let PATHS = null;
 let FIRST = null;
-let LIVE_SET = false;
 // 实时数据：拿不到就继续用内置样例，页面始终能看
 const LIVE = { totals: {}, range: { days: 7, storedDays: 0 }, repo: {}, contributions: { issues: [], pulls: [], open: null }, releases: [], paths: [], updatedAt: null };
 
@@ -701,8 +698,7 @@ const shortPath = p => {
 function donut(node) {
   node.textContent = "";
   const cs = getComputedStyle(document.documentElement);
-  let parts = PATHS ? PATHS : [];
-  if (!parts.length && !LIVE_SET) parts = [["0.6.14", 320, "--brand"], ["旧版本", 1137, "--machine"]];
+  const parts = PATHS || [];
   if (!parts.length) return emptyInto(node, "还没有页面数据");
   // 占比只在这份热门榜内部算：页面榜是各仓最近一次同步拿到的前几个，
   // 拿 14 天总浏览当分母会把两段时间混在一起，还会凭空补出一个「其他页面」
@@ -750,7 +746,7 @@ function donut(node) {
 
 function ranks(node) {
   node.textContent = "";
-  if (!RANKS.length) return;
+  if (!RANKS.length) return emptyInto(node, "还没有来源数据");
   // 只有一两个来源时别把数字推到半屏外
   const thin = RANKS.length === 1 && RANKS[0][1].length <= 2;
   node.style.maxWidth = thin ? "320px" : "";
@@ -1253,7 +1249,6 @@ function renderFunnel(f) {
 
 function applyLive(json) {
   Object.assign(LIVE, json);
-  LIVE_SET = true;
   PATHS = null;
   RANKS = [];
   if (Array.isArray(json.series) && json.series.length) {
