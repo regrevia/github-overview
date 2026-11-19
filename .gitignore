@@ -5,3 +5,7 @@ prototype/
 .env
 *.log
 .DS_Store
+dist/
+apps/desktop/node_modules/
+apps/mobile/
+*.tgz

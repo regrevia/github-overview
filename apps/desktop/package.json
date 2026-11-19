@@ -1,0 +1,50 @@
+{
+  "name": "github-overview-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "github-overview 桌面端",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win zip"
+  },
+  "devDependencies": {
+    "electron": "^45.3.4",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.regrevia.github-overview",
+    "productName": "github-overview",
+    "directories": {
+      "output": "../../dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../../src",
+        "to": "app/src"
+      },
+      {
+        "from": "../../public",
+        "to": "app/public"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": null
+    },
+    "win": {
+      "target": [
+        "zip"
+      ]
+    }
+  }
+}

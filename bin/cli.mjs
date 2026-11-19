@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readConfig, writeConfig, parseRepo, normalizeConfig, resolveToken, CONFIG_PATH } from "./../src/config.mjs";
 import { createApp } from "./../src/server.mjs";
+import { startLoop } from "./../src/loop.mjs";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0] && !argv[0].startsWith("-") ? argv[0] : "start";
@@ -88,9 +89,10 @@ try {
 
   const cfg = normalizeConfig(readConfig());
   const repos = cfg.repos;
-  if (!repos.length) {
+  // init/sync 需要仓库；start 不需要——空配置先起绑定页，绑完就能用
+  if (!repos.length && cmd !== "start") {
     usage();
-    console.log("还没有配置仓库，先跑：github-overview init --user 用户名");
+    console.log("还没有绑定账号，先跑：github-overview init --user 用户名");
     process.exit(1);
   }
 
@@ -106,28 +108,10 @@ try {
     const app = createApp({ repos, days, intervalHours, contribMinutes, cfg });
     const addr = await app.listen(port);
     console.log(`github-overview 在 http://127.0.0.1:${addr.port}`);
-    console.log(`已绑定 ${cfg.user}，${repos.length} 个仓库`);
-    const contribTick = async () => {
-      try {
-        await app.syncContribs();
-      } catch (e) {
-        console.log(`贡献刷新失败：${e.message}`);
-      }
-    };
-    const tick = async () => {
-      try {
-        const out = await app.sync();
-        const failed = out.results.filter((r) => !r.ok);
-        console.log(`同步 ${out.syncedAt}${failed.length ? `，${failed.length} 个失败` : ""}`);
-      } catch (e) {
-        console.log(`同步失败：${e.message}`);
-      }
-    };
-    // 全量同步跑完再开高频通道，避免两边同时写同一份快照
-    tick().then(() => {
-      if (contribMinutes > 0) setInterval(contribTick, Math.max(3, contribMinutes) * 60e3);
-    });
-    setInterval(tick, Math.max(1, intervalHours) * 3600e3);
+    if (repos.length) console.log(`已绑定 ${cfg.user}，${repos.length} 个仓库`);
+    else console.log(`还没绑定账号，打开 http://127.0.0.1:${addr.port} 用浏览器登录一次`);
+    // 同步节奏放在 src/loop.mjs，桌面端跑的也是这一份
+    startLoop(app, { intervalHours, contribMinutes, onLog: (line) => console.log(line) });
     await new Promise(() => {});
   }
 

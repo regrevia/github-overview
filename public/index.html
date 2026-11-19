@@ -192,6 +192,27 @@
   .cfg-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--label-secondary); margin-top: 8px; }
   .cfg-row label { width: 56px; flex: none; }
   .cfg { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-l1); }
+  /* 绑定页：全屏盖住看板，只有一条主路径 */
+  .gate { position: fixed; inset: 0; z-index: 60; display: none; place-items: center; background: var(--bg-base); }
+  .gate.on { display: grid; }
+  body.gated { overflow: hidden; }
+  .gate-card { width: min(360px, calc(100vw - 40px)); text-align: left; }
+  .gate-card h1 { font-size: 15px; font-weight: 600; color: var(--label-primary); margin: 0 0 6px; }
+  .gate-card p { font-size: 12px; line-height: 1.6; color: var(--label-secondary); margin: 0 0 16px; }
+  .gate-card button.primary { width: 100%; height: 34px; border: 0; border-radius: 8px; background: var(--brand); color: #fff;
+    font-size: 13px; font-weight: 500; cursor: pointer; }
+  .gate-card button.primary:disabled { opacity: .55; cursor: default; }
+  .gate-alt { margin-top: 14px; }
+  .gate-alt.sep { padding-top: 14px; border-top: 1px solid var(--border-l1); }
+  .gate-alt input { width: 100%; height: 30px; background: var(--bg-layer-1); border: 1px solid var(--border-l1); border-radius: 8px;
+    color: var(--label-primary); font: inherit; font-size: 12px; padding: 0 10px; }
+  .gate-alt a { color: var(--brand); text-decoration: none; }
+  .gate-card a { color: var(--brand); text-decoration: none; }
+  .gate-card a:hover { text-decoration: underline; text-underline-offset: 2px; }
+  .gate-card p.gate-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; letter-spacing: .1em;
+    color: var(--label-primary); margin: 0 0 2px; }
+  .gate-out { font-size: 12px; color: var(--label-secondary); margin-top: 10px; min-height: 16px; }
+  .gate-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; letter-spacing: .1em; color: var(--label-primary); margin: 8px 0; }
   .cfg.open { display: block; }
   .ask-out { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: var(--label-secondary); }
   .ask-out a { color: var(--brand); text-decoration: none; }
@@ -433,6 +454,19 @@
   </div>
 </div>
 
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <h1>把看板接到你的 GitHub</h1>
+    <p id="gate-lead">登录你自己的账号，数据只存在这台电脑上。</p>
+    <div id="gate-main"></div>
+    <div class="gate-alt">
+      <p id="gate-alt-lead" style="margin:0 0 8px">改用访问令牌</p>
+      <input id="gate-token" type="password" placeholder="ghp_… 或 github_pat_…" spellcheck="false" autocomplete="off">
+      <p style="margin:8px 0 0"><a id="gate-new" target="_blank" rel="noopener">在新标签页生成</a></p>
+    </div>
+    <div class="gate-out" id="gate-out"></div>
+  </div>
+</div>
 <script>
 let DATA = [
   { d: "10-26", v: 1,   u: 1,   c: 81,  cu: 34,  n: 1240 },
@@ -1507,6 +1541,7 @@ function repoNote(txt) {
   el.textContent = txt || "";
   el.hidden = !txt;
 }
+let FIRST_T = null;
 async function pull(days, force, quiet) {
   const seq = ++PULL_SEQ;
   const want = currentRepo;
@@ -1532,6 +1567,23 @@ async function pull(days, force, quiet) {
     const json = await res.json();
     // 连点切仓时慢的那次不许盖掉新仓：只认最后一次请求
     if (seq !== PULL_SEQ) return null;
+    // 还没绑定：整屏交给绑定页，别让空 KPI 在底下闪
+    if (json.needsBinding) {
+      // 服务端知道这台机器上有哪几条登录路可走，先问到再开绑定页
+      if (!GATE.state) await gateBoot();
+      if (!GATE.state) gateOpen({ bound: false, repos: 0 });
+      return null;
+    }
+    // 冷启动时第一次同步还没落盘：显示进度并自己重试，别把空快照画成「没有流量」
+    if (json.empty) {
+      const st = await fetch("/api/progress", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
+      if (seq === PULL_SEQ && st && st.running) {
+        repoNote("正在同步 " + st.done + "/" + st.total + " 个仓库，第一次要一会儿");
+        clearTimeout(FIRST_T);
+        FIRST_T = setTimeout(() => { if (seq === PULL_SEQ) pull(days, true, quiet); }, 2500);
+        return null;
+      }
+    }
     if (!stickyNote) repoNote("");
     applyLive(json);
     if (!(days === LIVE.range.days)) LIVE.range.days = days;
@@ -1646,7 +1698,163 @@ async function loadInterval() {
   } catch { /* 拿不到就留着占位 */ }
 }
 
+// ---- 绑定账号 ----
+// 只有一条主路：在浏览器里登录 GitHub 确认一次，绑的就是点确认的那个人。
+// 不读这台机器已有的登录态，别人打开不会绑到当前电脑的账号上。
+// 没有 git 命令行时退回粘贴访问令牌。
+const GATE = { on: false, state: null, timer: null };
+function gateSay(txt) { const el = document.getElementById("gate-out"); if (el) el.textContent = txt || ""; }
+function gateOpen(state) {
+  GATE.on = true;
+  GATE.state = state;
+  document.getElementById("gate").classList.add("on");
+  document.body.classList.add("gated");
+  const main = document.getElementById("gate-main");
+  const lead = document.getElementById("gate-lead");
+  main.textContent = "";
+  const browser = state.loginMode === "device" || state.loginMode === "gh";
+  if (browser) {
+    lead.textContent = "登录你自己的账号，数据只存在这台电脑上。";
+  } else {
+    lead.textContent = "粘贴访问令牌就能绑上。";
+  }
+  // 令牌输入是兜底，不是可选项：浏览器这条路走不通时它就顶上来，别把它藏掉
+  const alt = document.querySelector(".gate-alt");
+  if (alt) alt.classList.toggle("sep", browser);
+  const altLead = document.getElementById("gate-alt-lead");
+  if (altLead) altLead.hidden = !browser;
+  const btn = document.createElement("button");
+  btn.className = "primary";
+  btn.id = "gate-go";
+  btn.textContent = browser ? "用 GitHub 登录" : "绑定访问令牌";
+  btn.onclick = () => (browser ? gateLogin(btn) : gatePaste(btn));
+  main.appendChild(btn);
+}
+function gateClose() {
+  GATE.on = false;
+  clearInterval(GATE.timer);
+  document.getElementById("gate").classList.remove("on");
+  document.body.classList.remove("gated");
+}
+// 刚绑上时快照还是空的，第一次同步要跑好几十秒；这段时间说清楚在等什么，
+// 别让「没连上服务」这种失败文案盖在一个其实正常的首次同步上
+async function gateWaitSync() {
+  for (let i = 0; i < 90; i++) {
+    const st = await fetch("/api/progress", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
+    if (!st || !st.running) return true;
+    repoNote(`正在同步 ${st.done}/${st.total} 个仓库，第一次要一会儿`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return false;
+}
+async function gateDone(json) {
+  gateClose();
+  gateSay("");
+  await loadRepos();
+  repoNote("已绑定 " + (json.login || "") + "，" + json.repos + " 个仓库，正在同步");
+  await gateWaitSync();
+  await pull(currentRange, true, true);
+}
+async function gatePost(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "没成功（" + res.status + "）");
+  return json;
+}
+async function gateLogin(btn) {
+  btn.disabled = true;
+  gateSay("正在打开 GitHub…");
+  let d;
+  try {
+    d = await gatePost("/api/auth/login");
+  } catch (e) {
+    gateSay(e.message);
+    btn.disabled = false;
+    return;
+  }
+  gateSay("");
+  // 码、确认入口、进度都放在按钮下面，和这一步贴着，不要挂到卡片底部
+  const box = document.createElement("div");
+  box.style.cssText = "margin-top:10px;line-height:1.7";
+  if (d.userCode) {
+    const code = document.createElement("p");
+    code.className = "gate-code";
+    code.id = "gate-veri";
+    code.style.margin = "0";
+    code.textContent = d.userCode;
+    box.appendChild(code);
+  }
+  if (d.verifyUrl) {
+    const p = document.createElement("p");
+    p.style.margin = "0";
+    const a = document.createElement("a");
+    a.href = d.verifyUrl;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "在 GitHub 里确认";
+    p.appendChild(a);
+    box.appendChild(p);
+    // 能在点击里直接开更好；被拦了还有上面那个链接
+    window.open(d.verifyUrl, "_blank", "noopener");
+  }
+  const wait = document.createElement("p");
+  wait.style.cssText = "margin:0;font-size:12px;color:var(--label-secondary)";
+  wait.textContent = d.userCode ? "输入这个码后确认，会自动绑上" : "确认后会自动绑上";
+  box.appendChild(wait);
+  document.getElementById("gate-main").appendChild(box);
+  clearInterval(GATE.timer);
+  GATE.timer = setInterval(async () => {
+    try {
+      const out = await gatePost("/api/auth/login/poll", { mode: d.mode, id: d.id, deviceCode: d.deviceCode });
+      if (out.status === "ok") {
+        clearInterval(GATE.timer);
+        gateSay("已绑定 " + out.login + "，" + out.repos + " 个仓库");
+        await gateDone(out);
+      } else if (out.status !== "pending") {
+        clearInterval(GATE.timer);
+        gateSay(out.message || "没绑上，再点一次");
+        btn.disabled = false;
+      }
+    } catch (e) {
+      clearInterval(GATE.timer);
+      gateSay(e.message);
+      btn.disabled = false;
+    }
+  }, Math.max(2, d.interval || 3) * 1000);
+}
+async function gatePaste(btn) {
+  const token = document.getElementById("gate-token").value.trim();
+  if (!token) {
+    gateSay("先粘贴访问令牌");
+    document.getElementById("gate-token").focus();
+    return;
+  }
+  btn.disabled = true;
+  gateSay("正在核对…");
+  try {
+    const out = await gatePost("/api/auth", { token });
+    gateSay("已绑定 " + out.login + "，" + out.repos + " 个仓库");
+    await gateDone(out);
+  } catch (e) {
+    gateSay(e.message);
+    btn.disabled = false;
+  }
+}
+document.getElementById("gate-new").href =
+  "https://github.com/settings/tokens/new?scopes=repo,read:user&description=github-overview";
+document.getElementById("gate-token").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { const b = document.getElementById("gate-go"); if (b && !b.disabled) b.click(); }
+});
+async function gateBoot() {
+  try {
+    const st = await fetch("/api/auth", { cache: "no-store" }).then((r) => r.json());
+    GATE.state = st;
+    if (!st.bound || !st.repos) gateOpen(st);
+  } catch { /* 服务没起来时别挡着页面的错误提示 */ }
+}
+
 loadRepos().then(() => { pull(currentRange); loadInterval(); });
+gateBoot();
 softRefresh();
 let rzT;
 addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => render(currentRange), 160); });

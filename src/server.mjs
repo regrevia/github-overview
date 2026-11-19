@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { join, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readConfig, writeConfig, resolveToken, parseRepo, normalizeConfig } from "./config.mjs";
+import { authState, deviceStart, devicePoll, saveToken, adoptAccount, whoami, loginStart, loginPoll } from "./auth.mjs";
 import { makeGithub } from "./github.mjs";
 import { makeNpm } from "./npm.mjs";
 import { loadStore, saveStore, repoStore, mergeTraffic, mergeNpm, mergeStars, series, storedDays } from "./store.mjs";
@@ -17,17 +18,26 @@ const ALL = "all";
 const SUM_CACHE = new Map();
 
 export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMinutes = 15, cfg: cfgIn } = {}) {
+  // 空配置也要能起来：先给绑定页，绑完 reload() 再按新配置建目标
   const cfg = cfgIn || readConfig();
   const list = repos || normalizeConfig(cfg).repos || (repo ? [{ repo, npm: cfg.npm }] : []);
-  if (!list.length) throw new Error("还没有配置仓库");
-  const token = resolveToken(cfg);
-  const self = [...new Set([cfg.user, ...(cfg.selfLogins || [])].filter(Boolean))];
-  const targets = list.map((r) => {
-    const item = typeof r === "string" ? { repo: r } : r;
-    const { owner, name } = parseRepo(item.repo);
-    const npmPkg = item.npm || name;
-    return { key: `${owner}/${name}`, owner, name, npmPkg, npmExplicit: Boolean(item.npm), gh: makeGithub(token, { owner, name }), npm: makeNpm(npmPkg) };
-  });
+  const buildTargets = (rows, token) =>
+    rows.map((r) => {
+      const item = typeof r === "string" ? { repo: r } : r;
+      const { owner, name } = parseRepo(item.repo);
+      const npmPkg = item.npm || name;
+      return { key: `${owner}/${name}`, owner, name, npmPkg, npmExplicit: Boolean(item.npm), gh: makeGithub(token, { owner, name }), npm: makeNpm(npmPkg) };
+    });
+  let targets = buildTargets(list, resolveToken(cfg));
+  let self = [...new Set([cfg.user, ...(cfg.selfLogins || [])].filter(Boolean))];
+  // 绑完账号立刻换成新 token 和新仓库列表，不用重启进程
+  function reload() {
+    const fresh = normalizeConfig(readConfig());
+    targets = buildTargets(fresh.repos || [], resolveToken(readConfig()));
+    self = [...new Set([fresh.user, ...(fresh.selfLogins || [])].filter(Boolean))];
+    store = loadStore();
+    return targets.length;
+  }
   let store = loadStore();
   let lastSync = null;
   let syncProgress = { running: false, done: 0, total: 0 };
@@ -625,15 +635,92 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       res.end(typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body));
     };
     try {
+      // 绑定账号：设备码流不需要用户手抄 token，也支持直接粘贴 PAT
+      if (url.pathname === "/api/auth") {
+        if (req.method === "POST") {
+          let raw = "";
+          for await (const chunk of req) raw += chunk;
+          const body = JSON.parse(raw || "{}");
+          const token = String(body.token || "").trim();
+          if (!token) return send(400, { error: "没有收到 token" });
+          const me = await whoami(token);
+          if (!me) return send(400, { error: "这个 token 读不到 GitHub 账号" });
+          saveToken(token, me.login);
+          const adopted = await adoptAccount(token, me.login).catch(() => ({ added: 0, total: 0 }));
+          const count = reload();
+          return send(200, { bound: true, login: me.login, repos: count, adopted: adopted.added });
+        }
+        return send(200, await authState());
+      }
+      // 保留给命令行/打包脚本：本机已经登录过 gh 时直接接管这个账号，界面不再提供这条路
+      if (url.pathname === "/api/auth/gh" && req.method === "POST") {
+        const token = resolveToken(readConfig());
+        const me = await whoami(token);
+        if (!me) return send(400, { error: "这台机器上没有可用的 gh 登录" });
+        saveToken(token, me.login);
+        const adopted = await adoptAccount(token, me.login).catch(() => ({ added: 0 }));
+        return send(200, { bound: true, login: me.login, repos: reload(), adopted: adopted.added });
+      }
+      // 浏览器授权：一次点击 → 屏幕上给一次性码 + 打开 GitHub 确认页。
+      // 谁登的 GitHub 就绑谁，不读本机已有登录，别人打开不会绑到这台机器的账号上。
+      if (url.pathname === "/api/auth/login" && req.method === "POST") {
+        try {
+          return send(200, await loginStart());
+        } catch (e) {
+          return send(400, { error: String(e.message || e) });
+        }
+      }
+      if (url.pathname === "/api/auth/login/poll" && req.method === "POST") {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw || "{}");
+        if (body.mode === "device") {
+          if (!body.deviceCode) return send(400, { error: "缺 deviceCode" });
+          const out = await devicePoll(body.deviceCode);
+          if (out.status === "ok") {
+            await adoptAccount(resolveToken(readConfig()), out.login).catch(() => null);
+            return send(200, { ...out, repos: reload(), ...(await authState()) });
+          }
+          return send(200, out);
+        }
+        const out = loginPoll(body.id);
+        if (out.status === "ok") return send(200, { ...out, repos: reload(), ...(await authState()) });
+        return send(200, out);
+      }
+      if (url.pathname === "/api/auth/device" && req.method === "POST") {
+        try {
+          return send(200, await deviceStart());
+        } catch (e) {
+          return send(400, { error: String(e.message || e) });
+        }
+      }
+      if (url.pathname === "/api/auth/poll" && req.method === "POST") {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw || "{}");
+        if (!body.deviceCode) return send(400, { error: "缺 deviceCode" });
+        const out = await devicePoll(body.deviceCode);
+        if (out.status === "ok") {
+          await adoptAccount(resolveToken(readConfig()), out.login).catch(() => null);
+          return send(200, { ...out, repos: reload(), ...(await authState()) });
+        }
+        return send(200, out);
+      }
       if (url.pathname === "/api/repos") {
-        return send(200, repoRows());
+        return send(200, targets.length ? repoRows() : []);
+      }
+      // 没绑账号时各接口给空载荷，前端据此只显示绑定页
+      if (!targets.length && /^\/api\/(data|summary|ask|sync)$/.test(url.pathname)) {
+        return send(200, { empty: true, needsBinding: true, totals: {}, series: [], range: { days } });
       }
       if (url.pathname === "/api/data") {
         const windowDays = Number(url.searchParams.get("days") || days);
         const rawKey = url.searchParams.get("repo");
         const key = resolveKey(rawKey);
         if (key === null) return send(404, { error: noRepo(rawKey), repo: rawKey });
-        return send(200, build(windowDays, key));
+        // 绑定之后、第一次同步落盘之前快照是空的：标出来，让前端显示进度而不是一屏 0
+        const seeded = Object.values(store.repos).some((r) => Object.keys(r?.days || {}).length || (r?.stars || []).length);
+        return send(200, seeded ? build(windowDays, key) : { ...build(windowDays, key), empty: true });
       }
       if (url.pathname === "/api/progress") {
         return send(200, { ...syncProgress, intervalHours, contribMinutes });
@@ -977,6 +1064,8 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
     sync,
     syncContribs,
     build,
+    reload,
+    count: () => targets.length,
     listen(port = 4317, host = "127.0.0.1") {
       return new Promise((resolve) => server.listen(port, host, () => resolve(server.address())));
     },
