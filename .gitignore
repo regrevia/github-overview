@@ -7,5 +7,9 @@ prototype/
 .DS_Store
 dist/
 apps/desktop/node_modules/
-apps/mobile/
 *.tgz
+apps/mobile/.gradle/
+apps/mobile/build/
+apps/mobile/app/build/
+apps/mobile/local.properties
+apps/mobile/.idea/

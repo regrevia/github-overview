@@ -3,6 +3,7 @@ import { readConfig, writeConfig, parseRepo, normalizeConfig, resolveToken, CONF
 import { createApp } from "./../src/server.mjs";
 import { startLoop } from "./../src/loop.mjs";
 import { readFileSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0] && !argv[0].startsWith("-") ? argv[0] : "start";
@@ -27,6 +28,8 @@ const flag = (...names) => {
 const repoArg = flag("--repo", "-r");
 const userArg = flag("--user", "-u");
 const port = Number(flag("--port", "-p") || process.env.PORT || 4317);
+// 手机连的是这台电脑，默认只听本机；要给手机看再加 --host 0.0.0.0
+const hostArg = flag("--host") || process.env.HOST || "127.0.0.1";
 const npmArg = flag("--npm");
 const days = Number(flag("--days") || 7);
 const intervalHours = Number(flag("--refresh") || 6);
@@ -37,10 +40,26 @@ function usage() {
 
   github-overview init --user 用户名 [--npm 包名,...]
   github-overview init --repo owner/repo[,owner/repo2] [--npm 包名,...]
-  github-overview start [--port 4317] [--days 7] [--refresh 6] [--contrib 15]
+  github-overview start [--port 4317] [--host 0.0.0.0] [--days 7] [--refresh 6] [--contrib 15]
   github-overview sync
   github-overview config --apikey KEY --baseurl URL [--model deepseek-chat]
 `);
+}
+
+// 手机要填的地址：只留真实局域网网卡，跳回环、自分配和 VPN 隧道（那不是手机能到的地址）
+const TUNNEL = /^(utun|ipsec|gif|stf|awdl|llw|nan|bridge|ap\d|ppp)/;
+function lanAddresses() {
+  const out = [];
+  for (const [name, list] of Object.entries(networkInterfaces())) {
+    if (TUNNEL.test(name)) continue;
+    for (const it of list || []) {
+      if (it.family !== "IPv4" || it.internal) continue;
+      if (it.address.startsWith("169.254.")) continue;
+      // en0/wlan 这类物理网卡排前面，虚拟网桥排后面
+      out.push({ name, ip: it.address });
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name)).map((it) => it.ip);
 }
 
 // 账号绑定：列出该账号名下仓库；有 token 时能拿到私有仓库的 traffic
@@ -117,11 +136,13 @@ try {
 
   if (cmd === "start") {
     const app = createApp({ repos, days, intervalHours, contribMinutes, cfg });
-    const addr = await app.listen(port);
+    const lan = hostArg !== "127.0.0.1" && hostArg !== "localhost";
+    const addr = await app.listen(port, lan ? "0.0.0.0" : "127.0.0.1");
     console.log(`github-overview 在 http://127.0.0.1:${addr.port}`);
     if (addr.moved) console.log(`端口 ${port} 被占用了，改用 ${addr.port}`);
     if (repos.length) console.log(`已绑定 ${cfg.user}，${repos.length} 个仓库`);
     else console.log(`还没绑定账号，打开 http://127.0.0.1:${addr.port} 用浏览器登录一次`);
+    if (lan) for (const ip of lanAddresses()) console.log(`手机填 http://${ip}:${addr.port}`);
     // 同步节奏放在 src/loop.mjs，桌面端跑的也是这一份
     startLoop(app, { intervalHours, contribMinutes, onLog: (line) => console.log(line) });
     await new Promise(() => {});

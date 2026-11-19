@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">GitHub 看板</string>
+  <string name="setup_hint">填电脑上看板的地址</string>
+  <string name="setup_go">连接</string>
+  <string name="setup_change">换一个地址</string>
+  <string name="setup_bad">地址要像 http://192.168.1.2:4317</string>
+</resources>
