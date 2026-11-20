@@ -107,6 +107,7 @@ function digest(data) {
     repo: data.repo?.fullName ?? '全部仓库',
     days: data.range?.days ?? null,
     covered: data.range?.covered ?? null,
+    storedDays: data.range?.storedDays ?? null,
     first: data.range?.first ?? null,
     totals: {
       views: totals.views ?? null,
@@ -125,6 +126,34 @@ function digest(data) {
     starGrowth: data.starGrowth ?? null,
     updatedAt: data.updatedAt ?? null,
   }
+}
+
+/**
+ * Turn the payload into the few lines a person reads in the transcript.
+ * The full numbers are in the tool result; this is the summary card.
+ * @param value - executed tool result.
+ * @returns printable text.
+ */
+function card(value) {
+  if (!value || typeof value !== 'object') return '没有拿到数据'
+  if (value.ok === false) return value.reason ?? '读不到看板'
+  const t = value.totals ?? {}
+  const head = `${value.repo ?? '全部仓库'} · 近 ${value.days ?? 7} 天`
+  const line = (label, n, extra) => (n === null || n === undefined ? null : `${label} ${Number(n).toLocaleString('en')}${extra ? ` ${extra}` : ''}`)
+  const rows = [
+    line('浏览', t.views),
+    line('去重访客', t.uniques),
+    line('克隆', t.clones),
+    line('npm', t.npm),
+  ].filter(Boolean)
+  // `starGrowth.delta` is the change inside the window; `span` is the window itself.
+  const g = value.starGrowth ?? {}
+  if (typeof g.delta === 'number') rows.push(`star ${g.delta >= 0 ? '+' : ''}${g.delta}`)
+  const c = value.contributions ?? {}
+  if (c.issues || c.pulls) rows.push(`外部 issue ${c.issues ?? 0} · PR ${c.pulls ?? 0}`)
+  const stored = typeof value.storedDays === 'number' ? `已存 ${value.storedDays} 天` : ''
+  const tail = [stored, value.updatedAt ? `同步于 ${value.updatedAt}` : ''].filter(Boolean).join(' · ')
+  return `${head}\n${rows.join(' · ') || '没有数据'}${tail ? `\n${tail}` : ''}`
 }
 
 /**
@@ -174,12 +203,14 @@ const definition = {
         reason: { type: 'string' },
         repo: { type: 'string' },
         days: { type: 'integer' },
+        covered: { type: 'integer' },
+        storedDays: { type: 'integer' },
         totals: { type: 'object' },
         series: { type: 'array', items: { type: 'object' } },
         repos: { type: 'array', items: { type: 'object' } },
       },
     },
-    render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    render: (_args, value) => [{ type: 'text', text: card(value) }],
   },
   async execute(args) {
     const days = DAYS.includes(args?.days) ? args.days : 7
