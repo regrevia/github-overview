@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- 无标题栏：页面自己就是全部界面，系统标题栏只会压掉顶部信息 -->
+  <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+    <item name="android:windowBackground">#101114</item>
+    <item name="android:statusBarColor">#101114</item>
+    <item name="android:navigationBarColor">#101114</item>
+    <item name="android:windowLightStatusBar">false</item>
+  </style>
+</resources>

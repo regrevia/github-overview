@@ -8,17 +8,17 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -53,11 +53,16 @@ public class MainActivity extends Activity {
   }
 
   private void showSetup(String hint) {
+    showSetup(hint, "");
+  }
+
+  private void showSetup(String hint, String prefill) {
     setup = new LinearLayout(this);
     setup.setOrientation(LinearLayout.VERTICAL);
     setup.setBackgroundColor(Color.parseColor("#101114"));
     int pad = dp(24);
-    setup.setPadding(pad, dp(72), pad, pad);
+    // 顶部再多留一截给状态栏，inset() 会在拿到真实高度后补上
+    setup.setPadding(pad, dp(36), pad, pad);
 
     TextView title = new TextView(this);
     title.setText(R.string.app_name);
@@ -77,6 +82,7 @@ public class MainActivity extends Activity {
     final EditText input = new EditText(this);
     input.setSingleLine(true);
     input.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
+    input.setText(prefill);
     input.setTextColor(Color.parseColor("#F5F5F7"));
     input.setHintTextColor(Color.parseColor("#5A5A5F"));
     input.setTextSize(15);
@@ -93,6 +99,7 @@ public class MainActivity extends Activity {
     setup.addView(go, goLp);
 
     input.requestFocus();
+    if (prefill.length() > 0) input.setSelection(prefill.length());
     InputMethodManager ime = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
     if (ime != null) ime.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
 
@@ -105,7 +112,7 @@ public class MainActivity extends Activity {
       prefs.edit().putString(KEY, url).apply();
       load(url);
     });
-    setContentView(setup);
+    setContentView(inset(setup));
   }
 
   /** 只认 http(s)，顺手补协议和去掉结尾斜杠，省得用户被格式卡住。 */
@@ -130,10 +137,26 @@ public class MainActivity extends Activity {
       WebSettings s = web.getSettings();
       s.setJavaScriptEnabled(true);
       s.setDomStorageEnabled(true);
-      s.setLoadWithOverviewMode(true);
-      s.setUseWideViewPort(true);
+      // 页面自带 width=device-width：按设备宽度排版即可。
+      // 开 useWideViewPort + loadWithOverviewMode 会把页面按 980px 排完再缩回来，
+      // 缩放后的内容撑不满屏幕，WebView 底色从下面透出来就是一整块黑。
+      s.setUseWideViewPort(false);
+      s.setLoadWithOverviewMode(false);
       s.setSupportZoom(false);
+      s.setBuiltInZoomControls(false);
+      s.setDisplayZoomControls(false);
+      s.setTextZoom(100);
       web.setWebViewClient(new WebViewClient() {
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest req, WebResourceError err) {
+          if (req == null || !req.isForMainFrame()) return;
+          // 电脑那头的看板没开、或者换了网段：直接把地址交回去改，别停在系统错误页
+          String cur = prefs.getString(KEY, "");
+          String why = getString(R.string.setup_fail);
+          prefs.edit().putString(KEY, "").apply();
+          showSetup(why, cur);
+        }
+
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
           // 授权这类跳出看板的链接交给手机浏览器，登录态留在他自己的浏览器里
@@ -150,29 +173,44 @@ public class MainActivity extends Activity {
           }
         }
       });
-      setContentView(web);
+      // WebView 不认自己的 padding：网页内容照样铺满整屏，状态栏会压在最上面。
+      // 套一层容器，把 insets 变成容器的 padding，WebView 跟着缩进去。
+      FrameLayout holder = new FrameLayout(this);
+      holder.setBackgroundColor(Color.parseColor("#101114"));
+      holder.addView(web, new FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+      web.setOnLongClickListener(v -> {
+        showSetup(getString(R.string.setup_change), prefs.getString(KEY, ""));
+        return true;
+      });
+      setContentView(inset(holder));
     }
     web.loadUrl(url);
   }
 
-  @Override
-  public boolean onCreateOptionsMenu(Menu menu) {
-    menu.add(0, 1, 0, R.string.setup_change);
-    return true;
-  }
-
-  @Override
-  public boolean onOptionsItemSelected(MenuItem item) {
-    if (item.getItemId() == 1) {
-      prefs.edit().putString(KEY, "").apply();
-      if (web != null) {
-        web.destroy();
-        web = null;
+  /**
+   * targetSdk 35 起窗口强制铺满整屏，状态栏和手势条会直接盖在内容上。
+   * 把系统栏占的位置变成内边距，页面从状态栏下面开始画，底部也不被手势条压住。
+   */
+  private View inset(final View v) {
+    final int[] base = { v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(), v.getPaddingBottom() };
+    v.setOnApplyWindowInsetsListener((view, insets) -> {
+      int top, bottom, left, right;
+      if (android.os.Build.VERSION.SDK_INT >= 30) {
+        android.graphics.Insets b = insets.getInsets(
+            android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
+        top = b.top; bottom = b.bottom; left = b.left; right = b.right;
+      } else {
+        top = insets.getSystemWindowInsetTop();
+        bottom = insets.getSystemWindowInsetBottom();
+        left = insets.getSystemWindowInsetLeft();
+        right = insets.getSystemWindowInsetRight();
       }
-      showSetup(getString(R.string.setup_hint));
-      return true;
-    }
-    return super.onOptionsItemSelected(item);
+      view.setPadding(base[0] + left, base[1] + top, base[2] + right, base[3] + bottom);
+      return insets;
+    });
+    v.requestApplyInsets();
+    return v;
   }
 
   @Override

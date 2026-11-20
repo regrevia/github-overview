@@ -1166,7 +1166,7 @@ function renderForks(json, days) {
   document.getElementById("f-new").textContent = inWin.toLocaleString("en");
   const reposWith = (json.repos || []).filter((r) => (r.newForks || 0) > 0).length;
   document.getElementById("f-new-sub").textContent = !items.length
-    ? "没有新 fork"
+    ? (f.total ? `没有新的 · 累计 ${Number(f.total).toLocaleString("en")} 个` : "没有新 fork")
     : all
       ? `${reposWith} 个仓库`
       : "";
@@ -1317,8 +1317,10 @@ function applyLive(json) {
     : "";
   // 星标卡下面报的 fork 也要是这一窗口的，跟左边的星标增量对齐
   const forkWin = json.forks ? json.forks.inWindow || 0 : 0;
+  // 窗口里 0 个时补上累计数：只写「没有新 fork」会被读成这仓从没人 fork 过
+  const forkTotal = json.forks ? json.forks.total || 0 : 0;
   document.getElementById("k-forks").textContent = (gTxt ? gTxt + " · " : "")
-    + (forkWin ? "新增 " + forkWin + " 个 fork" : "没有新 fork")
+    + (forkWin ? "新增 " + forkWin + " 个 fork" : (forkTotal ? "没有新的 · 累计 " + forkTotal : "没有新 fork"))
     + (repo.fullName === "全部仓库" && repo.count ? " · " + repo.count + " 个仓" : "");
   const rels = (json.releases || []).filter(r => DATA.some(x => x.d === label(r.at)));
   // 后端对发版列表有硬上限（全局 120、单仓 200）：只有真的取满上限，数字才是下限

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "GitHub Overview",
+    "description": "把本机看板里的数字直接读给模型：访客与浏览、克隆、npm 下载、14 天漏斗、每个仓库一行、外部贡献和 star 增长，不用它去估。要先开着看板（npx github-overview start 或桌面端）；没开就直说，不读本地任何文件。",
+    "detail": "docs/DETAIL.zh.md"
+  }
+}

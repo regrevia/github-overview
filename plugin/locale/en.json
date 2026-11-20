@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "GitHub Overview",
+    "description": "Reads your local dashboard instead of guessing: one tool returns traffic views and unique visitors, clones, npm downloads, the 14-day funnel, per-repository rows, external contributions and star growth. Start the dashboard first (npx github-overview start, or the desktop app); with nothing running it says so and reads nothing from disk.",
+    "detail": "docs/DETAIL.md"
+  }
+}

@@ -6,12 +6,42 @@
 
 ![dashboard](docs/screenshot-dark.png)
 
+## 第一次运行
+
+包和安装包里没有任何账号、token 或历史数据，只有代码。第一次打开要自己做两件事：
+
+1. **绑定 GitHub**：页面上的「用 GitHub 登录」开一次浏览器授权。绑上的永远是你在浏览器里确认的那个账号；电脑上 `gh` 已经登录的账号不会被借用。
+2. **配模型（可选）**：不配也能用，AI 摘要走内置模板。要 AI 写摘要或提问，填 base URL、key、模型名，只存本机 `~/.config/github-overview/config.json`（0600）。
+
+```bash
+npx github-overview start          # 打开页面，登录一次就绑好
+```
+
+登录成功会把这个账号名下的仓库一起接过来，不用再跑别的命令。已经有 token（`GITHUB_TOKEN` 或 `GH_TOKEN`）的话，也可以在 `登录` 旁边直接粘访问令牌。
+
+数据也只在本机：抓下来的快照存在同一目录，不上传任何地方。想清空就删掉这个目录重来。
+
+## 装成插件
+
+在 DeepSeek Harness 的插件市场里搜 `github-overview`，装上之后直接问看板上的数：
+
+```
+用 github_overview 看看近 7 天哪个仓涨得最多
+```
+
+插件只连本机已经在跑的看板（`127.0.0.1:4317`）；没在跑会提示先 `npx github-overview start`，没绑定会提示先登录。它不自己抓数据、不含任何凭据。
+
 ## 用法
 
 ```bash
-npx github-overview init --user 你的GitHub用户名   # 绑定账号下全部仓库
+npx github-overview start      # http://127.0.0.1:4317，首次打开登录一次
+```
+
+只想挑几个仓库、或者不想在页面里点，可以先用命令写好清单，再 `start`：
+
+```bash
+npx github-overview init --user 你的GitHub用户名   # 账号下全部仓库
 npx github-overview init --repo owner/repo --npm 包名
-npx github-overview start      # http://127.0.0.1:4317
 ```
 
 - `--user` 会把账号下自己拥有的仓库都绑上；页面顶部可以切到「全部仓库」看合计，也可以切单个仓库。只要一部分就写 `--repo a/b,c/d`。
@@ -27,7 +57,6 @@ npx github-overview start      # http://127.0.0.1:4317
 ## 桌面端和手机端
 
 ```bash
-npx github-overview init --user 你的GitHub用户名
 npx github-overview start --host 0.0.0.0   # 手机要连的时候，多这一行
 ```
 
