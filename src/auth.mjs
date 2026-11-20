@@ -1,13 +1,17 @@
 import { readConfig, writeConfig, resolveToken } from "./config.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-// 绑定 GitHub 账号有三条路，优先用最省事的：
-//   1. 本机已经登录过 gh，直接借它的 token（零输入）
-//   2. 设备码流：显示 8 位码，在浏览器里确认，不用手抄 token
-//   3. 粘贴 PAT（没有 OAuth App 时的兜底）
+// 绑定账号只有两条路，两条都要用户在浏览器里亲自授权：
+//   1. 设备码流：显示 8 位码，在浏览器里确认（配了 GITHUB_OAUTH_CLIENT_ID 时走这条）
+//   2. gh 的一次性授权：临时配置目录里跑 gh auth login --web，浏览器里点一下确认
+// 本机 gh 里已经躺着的登录任何情况下都不借用——谁授权，绑的就是谁。
 // 设备码流需要一个公开的 client_id（OAuth App 的 ID，本身不是密钥）。
-// 想开启就把 GITHUB_OAUTH_CLIENT_ID 写进环境变量或配置，不写就走 2、3 之外的兜底。
+// 想用它就把 GITHUB_OAUTH_CLIENT_ID 写进环境变量或配置，不写就走第 2 条。
+// 两条都不通（没装 gh 也没配 client_id）时，退回粘贴 PAT。
 const GH = "https://github.com";
 const API = "https://api.github.com";
 const UA = "github-overview";
@@ -151,7 +155,7 @@ export function boundExplicit(cfg = readConfig()) {
   return Boolean(cfg.token);
 }
 
-// 有没有 git 命令行：有就能让 gh 自己开浏览器做设备码授权，不用我们注册 OAuth App
+// 有没有 gh 命令行：有就能让它自己开浏览器做一次性授权，不用我们注册 OAuth App
 export function hasGh() {
   try {
     execFileSync("gh", ["--version"], { encoding: "utf8", stdio: ["ignore", "ignore", "ignore"] });
@@ -161,27 +165,23 @@ export function hasGh() {
   }
 }
 
-// gh 里可能存着好几个账号：必须拿到刚登录那一个，不能默认取当前活动的那个，
-// 否则在别人电脑上（或本机已经登了别人）会把账号绑错。
-function ghAccounts() {
+// gh 平时把登录存在自己的配置目录（或系统钥匙串）里。授权时把它的配置目录指向一个空目录，
+// 并让它把凭据明文写进那个目录：这样读回来的 token 只可能来自刚才这次授权，
+// 不可能顺走这台电脑上原本登着的账号。读的是文件本身，不去碰钥匙串。用完整个目录删掉。
+function ghTokenIn(dir) {
   try {
-    const raw = execFileSync("gh", ["auth", "status", "--json", "hosts"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    const rows = JSON.parse(raw)?.hosts?.["github.com"] || [];
-    return rows.map((r) => ({ login: r.login, active: Boolean(r.active) }));
-  } catch {
-    return [];
-  }
-}
-
-function ghTokenFor(login) {
-  const args = ["auth", "token", "--hostname", "github.com"];
-  if (login) args.push("--user", login);
-  try {
-    const token = execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    return token || null;
+    const raw = readFileSync(join(dir, "hosts.yml"), "utf8");
+    const m = raw.match(/^\s*oauth_token:\s*(\S+)\s*$/m);
+    return m ? m[1] : null;
   } catch {
     return null;
   }
+}
+
+function dropDir(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {}
 }
 
 // 浏览器登录：优先用我们自己的 OAuth App（能显示成这个应用），
@@ -198,12 +198,12 @@ export async function loginStart(cfg = readConfig()) {
   if (clientId(cfg)) return { mode: "device", ...(await deviceStart()) };
   if (!hasGh()) throw new Error("这台电脑只能用访问令牌");
   const id = randomUUID();
-  const child = spawn("gh", ["auth", "login", "--web", "--hostname", "github.com", "--git-protocol", "https"], {
+  const dir = mkdtempSync(join(tmpdir(), "github-overview-login-"));
+  const child = spawn("gh", ["auth", "login", "--web", "--insecure-storage", "--hostname", "github.com", "--git-protocol", "https"], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, NO_COLOR: "1", GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" },
+    env: { ...process.env, GH_CONFIG_DIR: dir, NO_COLOR: "1", GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" },
   });
-  const before = ghAccounts().map((a) => a.login);
-  const entry = { child, code: null, done: null, at: Date.now(), tail: "", before };
+  const entry = { child, code: null, done: null, at: Date.now(), tail: "", dir };
   LOGIN.set(id, entry);
   const watch = (buf) => {
     entry.tail = (entry.tail + String(buf)).slice(-400);
@@ -220,9 +220,8 @@ export async function loginStart(cfg = readConfig()) {
       return;
     }
     try {
-      const now = ghAccounts();
-      const fresh = now.find((a) => !before.includes(a.login)) || now.find((a) => a.active) || null;
-      const token = ghTokenFor(fresh?.login) || ghTokenFor(null);
+      const token = ghTokenIn(dir);
+      dropDir(dir);
       if (!token) {
         entry.done = { status: "error", message: "没读到刚授权的账号" };
         return;
@@ -243,11 +242,14 @@ export async function loginStart(cfg = readConfig()) {
   // 等 gh 把一次性码打出来，最多 15 秒
   for (let i = 0; i < 60 && !entry.code && !entry.done; i++) await new Promise((r) => setTimeout(r, 250));
   if (entry.done) {
+    child.kill("SIGTERM");
+    dropDir(dir);
     LOGIN.delete(id);
     throw new Error(entry.done.message || "没能开始授权");
   }
   if (!entry.code) {
     child.kill("SIGTERM");
+    dropDir(dir);
     LOGIN.delete(id);
     throw new Error("授权页没打开，再试一次");
   }
@@ -259,22 +261,16 @@ export function loginPoll(id) {
   const entry = LOGIN.get(id);
   if (!entry) return { status: "error", message: "这次登录已结束，重新点一次" };
   if (entry.done) {
+    if (entry.dir) dropDir(entry.dir);
     LOGIN.delete(id);
     return entry.done;
   }
   if (Date.now() - entry.at > 900000) {
     entry.child.kill("SIGTERM");
+    if (entry.dir) dropDir(entry.dir);
     LOGIN.delete(id);
     return { status: "expired", message: "等太久了，重新点一次" };
   }
   return { status: "pending" };
 }
 
-export function ghAvailable() {
-  try {
-    const token = execFileSync("gh", ["auth", "token"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    return Boolean(token);
-  } catch {
-    return false;
-  }
-}
