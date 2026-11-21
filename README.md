@@ -4,7 +4,13 @@
 
 不依赖第三方统计服务，只跑一个本地 Node 进程：读你自己的 token，把数据抓下来存到本地，页面在浏览器里打开。
 
+```bash
+npx github-overview start          # 不需要先 clone，也不需要注册任何服务
+```
+
 ![dashboard](docs/screenshot-dark.png)
+
+![dashboard light](docs/screenshot-light.png)
 
 ## 第一次运行
 

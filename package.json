@@ -1,6 +1,6 @@
 {
   "name": "github-overview",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "Private dashboard for your own GitHub repos: traffic, clones, npm downloads and an AI summary in one view.",
   "type": "module",
   "bin": {
@@ -22,13 +22,22 @@
   },
   "keywords": [
     "github",
+    "github-traffic",
+    "github-stats",
+    "github-analytics",
     "traffic",
     "analytics",
+    "repo-analytics",
     "npm",
+    "npm-downloads",
+    "downloads",
     "dashboard",
-    "self-hosted"
+    "self-hosted",
+    "clones",
+    "stargazers"
   ],
   "license": "MIT",
+  "homepage": "https://github.com/regrevia/github-overview#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/regrevia/github-overview.git"
