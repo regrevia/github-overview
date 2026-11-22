@@ -1182,7 +1182,15 @@ function renderForks(json, days) {
       : "";
   const list = document.getElementById("fork-list");
   list.textContent = "";
-  if (!items.length) return;
+  // 窗口里 0 个 fork 是常见结果，不是没取到数据：不写清这点，读者会先怀疑数字不准
+  if (!items.length) {
+    const total = Number(f.total) || 0;
+    if (total) {
+      note.hidden = false;
+      note.textContent = "累计数按全部历史算，不随窗口变。";
+    }
+    return;
+  }
   if (all) {
     if (items.length >= 100) {
       note.hidden = false;
