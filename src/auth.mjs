@@ -1,6 +1,6 @@
 import { readConfig, writeConfig, resolveToken } from "./config.mjs";
 import { execFileSync, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,14 +29,32 @@ const json = async (res) => {
   }
 };
 
-export async function whoami(token) {
+// /api/auth 每开一次页面就要判一次绑定态。直接问 GitHub 是 600–1000ms，
+// 页面首屏会卡在这上面，所以认过的人名按账号缓存几分钟；
+// 网络抖一下不该让用户看到「未绑定」，失败时宁可回上次认到的结果。
+const ME_TTL = 5 * 60 * 1000;
+const meCache = new Map(); // token 摘要 → { at, me }
+const meKey = (token) => createHash("sha256").update(token).digest("hex").slice(0, 16);
+
+export async function whoami(token, { fresh = false } = {}) {
   if (!token) return null;
+  const key = meKey(token);
+  const cached = fresh ? null : meCache.get(key);
+  if (cached && Date.now() - cached.at < ME_TTL) return cached.me;
   const res = await fetch(`${API}/user`, {
     headers: { accept: "application/vnd.github+json", "user-agent": UA, authorization: `Bearer ${token}` },
   }).catch(() => null);
-  if (!res || !res.ok) return null;
+  // 凭据被撤销/失效是明确的答复，不能拿缓存糊过去；拿不到答复才回上次认到的人
+  if (res && (res.status === 401 || res.status === 403)) {
+    meCache.delete(key);
+    return null;
+  }
+  if (!res || !res.ok) return cached ? cached.me : null;
   const me = await json(res);
-  return me?.login ? { login: me.login, name: me.name || "", avatar: me.avatar_url || "" } : null;
+  if (!me?.login) return cached ? cached.me : null;
+  const out = { login: me.login, name: me.name || "", avatar: me.avatar_url || "" };
+  meCache.set(key, { at: Date.now(), me: out });
+  return out;
 }
 
 // 绑定状态：返回谁在用、token 从哪来，但绝不回传 token 本身
@@ -95,7 +113,7 @@ export async function devicePoll(deviceCode) {
   }).catch(() => null);
   const data = res ? await json(res) : { error: "network" };
   if (data.access_token) {
-    const me = await whoami(data.access_token);
+    const me = await whoami(data.access_token, { fresh: true });
     if (!me) return { status: "error", message: "这个 token 读不到账号" };
     saveToken(data.access_token, me.login);
     return { status: "ok", login: me.login };
@@ -226,7 +244,7 @@ export async function loginStart(cfg = readConfig()) {
         entry.done = { status: "error", message: "没读到刚授权的账号" };
         return;
       }
-      whoami(token).then(async (me) => {
+      whoami(token, { fresh: true }).then(async (me) => {
         if (!me) {
           entry.done = { status: "error", message: "读不到刚授权的账号" };
           return;
