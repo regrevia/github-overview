@@ -1,0 +1,93 @@
+// store 的纯逻辑：只改传进来的对象，不读盘也不写盘。
+// 浏览器里（mobile 客户端）用同一份，store.mjs 在这上面加 loadStore/saveStore。
+
+// GitHub traffic only keeps 14 rolling days, so every sync appends today's row.
+export const emptySlice = () => ({ days: {}, npm: {}, releases: [], meta: {}, stars: [] });
+export const emptyStore = () => ({ version: 2, repos: {} });
+
+export function repoStore(store, key) {
+  if (!store.repos[key]) store.repos[key] = emptySlice();
+  const s = store.repos[key];
+  if (!Array.isArray(s.stars)) s.stars = [];
+  return s;
+}
+
+// 每次存全量星标日期（一天可多条），不 merge 也不去重：总数和窗口净增都数这份
+export function mergeStars(slice, dates) {
+  if (!Array.isArray(dates) || !dates.length) return slice;
+  slice.stars = dates.filter(Boolean).map((d) => String(d).slice(0, 10)).sort();
+  return slice;
+}
+
+export function hasRepo(store, key) {
+  return Boolean(store.repos[key]);
+}
+
+const keyOf = (iso) => String(iso).slice(0, 10);
+
+export function mergeTraffic(slice, views, clones) {
+  const rows = [...(views?.views || []), ...(clones?.clones || [])];
+  for (const v of views?.views || []) {
+    const k = keyOf(v.timestamp);
+    slice.days[k] = { ...(slice.days[k] || {}), d: k, v: v.count, u: v.uniques };
+  }
+  for (const c of clones?.clones || []) {
+    const k = keyOf(c.timestamp);
+    slice.days[k] = { ...(slice.days[k] || {}), d: k, c: c.count, cu: c.uniques };
+  }
+  // API window totals are the only correct unique counts; daily uniques must never be summed
+  slice.meta.views = { total: views?.count ?? null, uniques: views?.uniques ?? null, at: new Date().toISOString() };
+  slice.meta.clones = { total: clones?.count ?? null, uniques: clones?.uniques ?? null, at: new Date().toISOString() };
+  return { slice, rows: rows.length };
+}
+
+export function mergeNpm(slice, daily) {
+  if (!Array.isArray(daily)) return slice;
+  for (const r of daily) slice.npm[r.d] = r.n;
+  return slice;
+}
+
+export function series(slice, days, npmDaily = {}) {
+  const out = [];
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  // 1 天窗口看最近一个完整日：GitHub 当天流量要到次日才结算，今天几乎总是 0
+  if (days === 1) {
+    const pick = (back) => {
+      const d = new Date(today);
+      d.setUTCDate(d.getUTCDate() - back);
+      return d.toISOString().slice(0, 10);
+    };
+    // 当天那一格是采集占位：四个计数全 0 说明 GitHub 还没结算，不是这天真没人来。
+    // 最多往回找 4 天，全是 0 就照旧报这一天，免得把长时间断采写成「历史上的某一天」
+    const settled = (row) => row && ["v", "u", "c", "cu"].some((f) => Number(row[f]) > 0);
+    let k = pick(1);
+    if (!slice.days[k]) k = pick(2);
+    else if (!settled(slice.days[k])) {
+      for (const back of [2, 3, 4]) {
+        if (settled(slice.days[pick(back)])) { k = pick(back); break; }
+      }
+    }
+    const row = slice.days[k] || {};
+    return [{ d: k, v: row.v ?? null, u: row.u ?? null, c: row.c ?? null, cu: row.cu ?? null, n: npmDaily[k] ?? slice.npm?.[k] ?? null }];
+  }
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const k = d.toISOString().slice(0, 10);
+    const row = slice.days[k] || {};
+    out.push({
+      d: k,
+      v: row.v ?? null,
+      u: row.u ?? null,
+      c: row.c ?? null,
+      cu: row.cu ?? null,
+      n: npmDaily[k] ?? slice.npm?.[k] ?? null,
+    });
+  }
+  return out;
+}
+
+export function storedDays(slice) {
+  return Object.keys(slice.days).length;
+}

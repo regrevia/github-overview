@@ -13,3 +13,5 @@ apps/mobile/build/
 apps/mobile/app/build/
 apps/mobile/local.properties
 apps/mobile/.idea/
+# 打包时从 public/ 复制，仓库里只留源
+apps/mobile/app/src/main/assets/web/

@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>github-overview</title>
+<script>
+// 独立模式：页面自己读 GitHub，不存在服务进程。判据只有来源，不看能否连上：
+// 走 file:// 或装进 App 的 asset 来源，就一定没有 /api/*，别让页面先去撞一次 404。
+(function () {
+  var h = location.hostname, p = location.protocol;
+  var solo = p === "file:" || p === "content:" || /(^|\.)androidplatform\.net$/.test(h) || window.__DGO_STANDALONE__ === true;
+  if (solo) document.documentElement.dataset.solo = "1";
+})();
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230f1115'/%3E%3Cpath d='M4 11V6l4-2 4 2v5' fill='none' stroke='%234f8cff' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root[data-theme="dark"] {
@@ -209,7 +218,11 @@
   .gate-card button.primary { width: 100%; height: 34px; border: 0; border-radius: 8px; background: var(--brand); color: #fff;
     font-size: 13px; font-weight: 500; cursor: pointer; }
   .gate-card button.primary:disabled { opacity: .55; cursor: default; }
+  .empty { padding: 18px 0 6px; }
+  .empty p { font-size: 12px; color: var(--label-secondary); margin: 0 0 10px; }
   .gate-alt { display: block; margin-top: 14px; }
+  /* 手机上不跑模型：摘要和问答在这里是空转，整块不出现比挂着「正在生成」诚实 */
+  html[data-solo="1"] aside .panel.ai { display: none; }
   /* 自己的分隔线，别借用页头那根 .sep（那是 1px 竖线，会把这里挤成一列字） */
   .gate-alt.sep-top { padding-top: 14px; border-top: 1px solid var(--border-l1); }
   .gate-alt input { width: 100%; height: 30px; background: var(--bg-layer-1); border: 1px solid var(--border-l1); border-radius: 8px;
@@ -336,8 +349,8 @@
 
   <div class="cols">
     <main>
-      <section class="sec">
-        <div class="head">
+      <section class="sec" id="sec-flow">
+        <div class="head" id="flow-head">
           <h2>流量</h2>
           <span class="note" id="range-note"></span>
           <div class="spacer"></div>
@@ -346,6 +359,10 @@
           <span class="key"><i class="dash"></i>发版</span>
         </div>
         <div class="chart" id="c-flow"></div>
+        <div class="empty" id="flow-empty" hidden>
+          <p>浏览和克隆只有仓库所有者能看到。</p>
+          <button class="mini" id="flow-token">填访问令牌</button>
+        </div>
       </section>
 
       <section class="sec">
@@ -414,7 +431,7 @@
         <div class="repo-grid" id="repo-list"></div>
       </section>
 
-      <section class="sec">
+     "sumction class="sec" id="sec-comp">
         <div class="head"><h2>构成<span class="head-note" id="comp-note">· 各仓最近一次快照</span></h2></div>
         <div class="split">
           <div class="donut" id="donut"></div>
@@ -462,13 +479,16 @@
 
 <div class="gate" id="gate">
   <div class="gate-card">
-    <h1>把看板接到你的 GitHub</h1>
-    <p id="gate-lead">登录你自己的账号，数据只存在这台电脑上。</p>
+    <h1 id="gate-title">把看板接到你的 GitHub</h1>
+    <p id="gate-lead">填你的 GitHub 用户名，公开数据直接读。</p>
     <div id="gate-main"></div>
     <div class="gate-alt">
-      <p id="gate-alt-lead" style="margin:0 0 8px">改用访问令牌</p>
+      <p id="gate-alt-lead" style="margin:0 0 8px">有访问令牌才能看流量和克隆</p>
       <input id="gate-token" type="password" placeholder="ghp_… 或 github_pat_…" spellcheck="false" autocomplete="off">
-      <p style="margin:8px 0 0"><a id="gate-new" target="_blank" rel="noopener">在新标签页生成</a></p>
+      <p style="margin:8px 0 0;display:flex;align-items:center;gap:14px">
+        <button class="ghost" id="gate-token-go" hidden>用令牌登录</button>
+        <a id="gate-new" target="_blank" rel="noopener">在新标签页生成</a>
+      </p>
     </div>
     <div class="gate-out" id="gate-out"></div>
   </div>
@@ -824,13 +844,20 @@ function render(days) {
       : Math.min(covN, 14) > days
         ? `近 ${Math.min(covN, 14)} 天去重访客 ${fmt(uniq)}`
         : `访客 ${fmt(uniq)} · 近 ${Math.min(covN, 14)} 天去重`;
-  rangeNote.textContent = dom[0].label + " → " + dom[dom.length - 1].label;
+  // 还没同步到任何一天时 dom 是空的，别在这里炸掉整屏
+  rangeNote.textContent = dom.length ? dom[0].label + " → " + dom[dom.length - 1].label : "";
   // issue/PR 数跟着所选窗口走，标题要说清是哪段
   const cSpan = LIVE.starGrowth?.span;
   document.getElementById("contrib-range").textContent = days === 1 && LIVE.range?.to
     ? label(LIVE.range.to)
     : cSpan ? `近 ${cSpan} 天` : `近 ${days} 天`;
-  flowChart(document.getElementById("c-flow"), days);
+  // 没有令牌就拿不到 traffic，匿名下这张图一定是空的；空图不如说清为什么空
+  const noTraffic = !recs.length && !(LIVE.paths && LIVE.paths.length) && !(LIVE.referrers && LIVE.referrers.length);
+  document.getElementById("flow-head").hidden = noTraffic;
+  document.getElementById("flow-empty").hidden = !noTraffic;
+  document.getElementById("c-flow").hidden = noTraffic;
+  document.getElementById("sec-comp").hidden = noTraffic;
+  if (!noTraffic) flowChart(document.getElementById("c-flow"), days);
   npmChart(document.getElementById("c-npm"), days);
   donut(document.getElementById("donut"));
   ranks(document.getElementById("ranks"));
@@ -1582,7 +1609,11 @@ async function pull(days, force, quiet) {
       repoNote(info.error || "这个仓库不在监控列表，已切回全部仓库");
       return pull(days, true, quiet);
     }
-    if (!res.ok) throw new Error(res.status);
+    if (!res.ok) {
+      // 服务/本机 API 层给的 reason 比状态码有用，带上去给拉取失败的提示用
+      const info = await res.json().catch(() => ({}));
+      throw new Error(info.error || "没连上服务，屏上还是上一次的数据");
+    }
     const json = await res.json();
     // 连点切仓时慢的那次不许盖掉新仓：只认最后一次请求
     if (seq !== PULL_SEQ) return null;
@@ -1612,7 +1643,7 @@ async function pull(days, force, quiet) {
   } catch (e) {
     if (seq !== PULL_SEQ) return null;
     // 拉不到就明说屏上是旧数据，别让旧仓数字看起来像新仓的
-    repoNote("没连上服务，屏上还是上一次的数据");
+    repoNote(e && e.message ? e.message : "没连上服务，屏上还是上一次的数据");
     // 旧数据就按旧范围重画，别挂上新范围的名字
     render(LIVE.range?.days || days);
     return null;
@@ -1718,11 +1749,29 @@ async function loadInterval() {
 }
 
 // ---- 绑定账号 ----
-// 只有一条主路：在浏览器里登录 GitHub 确认一次，绑的就是点确认的那个人。
-// 不读这台机器已有的登录态，别人打开不会绑到当前电脑的账号上。
-// 没有 git 命令行时退回粘贴访问令牌。
+// 手机和桌面独立版没有服务进程：填用户名就能读公开数据，填令牌才解锁流量和克隆。
+// 服务器版仍然只有一条主路：在浏览器里登录 GitHub 确认一次。
 const GATE = { on: false, state: null, timer: null };
 function gateSay(txt) { const el = document.getElementById("gate-out"); if (el) el.textContent = txt || ""; }
+function gateUser(btn) {
+  const input = document.getElementById("gate-user");
+  gateBindUser(input ? input.value : "", btn);
+}
+// 独立模式：用户名是主路，令牌是可选解锁
+async function gateBindUser(user, btn) {
+  const b = btn || document.getElementById("gate-go");
+  if (b) b.disabled = true;
+  gateSay("正在读 GitHub…");
+  try {
+    const out = await window.DGO_BIND_USER(user);
+    gateSay("");
+    if (out.note) repoNote(out.note);
+  } catch (e) {
+    gateSay(e.message);
+  } finally {
+    if (b) b.disabled = false;
+  }
+}
 function gateOpen(state) {
   GATE.on = true;
   GATE.state = state;
@@ -1731,17 +1780,78 @@ function gateOpen(state) {
   const main = document.getElementById("gate-main");
   const lead = document.getElementById("gate-lead");
   main.textContent = "";
-  const browser = state.loginMode === "device" || state.loginMode === "gh";
-  if (browser) {
+  const standalone = Boolean(window.DGO_STANDALONE);
+  const browser = !standalone && (state.loginMode === "device" || state.loginMode === "gh");
+  const bound = Boolean(state && state.bound);
+  if (standalone && bound) {
+    // 已经绑上用户名，再看这一屏只可能为了一件事：补令牌
+    lead.textContent = "填访问令牌，浏览和克隆就能读出来。";
+  } else if (standalone) {
+    lead.textContent = "填你的 GitHub 用户名，公开数据直接读。";
+  } else if (browser) {
     lead.textContent = "登录你的账号，数据只存在这台电脑上。";
   } else {
     lead.textContent = "粘贴访问令牌就能绑上。";
   }
-  // 令牌输入是兜底，不是可选项：浏览器这条路走不通时它就顶上来，别把它藏掉
+  // 令牌输入是兜底，不是可选项：主路走不通时它就顶上来，别把它藏掉
   const alt = document.querySelector(".gate-alt");
-  if (alt) alt.classList.toggle("sep-top", browser);
+  if (alt) alt.classList.toggle("sep-top", standalone || browser);
   const altLead = document.getElementById("gate-alt-lead");
-  if (altLead) altLead.hidden = !browser;
+  if (altLead) {
+    altLead.hidden = !(standalone || browser);
+    altLead.textContent = standalone ? "填令牌才能看流量和克隆" : "改用访问令牌";
+  }
+  if (standalone && bound) {
+    // 补令牌：主按钮就是这个动作，令牌输入框在下面
+    const btn = document.createElement("button");
+    btn.className = "primary";
+    btn.id = "gate-token-go-main";
+    btn.textContent = "用令牌登录";
+    btn.onclick = () => gatePaste(btn);
+    main.appendChild(btn);
+    const skip = document.createElement("button");
+    skip.className = "ghost";
+    skip.style.cssText = "width:100%;height:30px;margin-top:10px;font-size:12px";
+    skip.textContent = "先不填";
+    skip.onclick = () => gateClose();
+    main.appendChild(skip);
+    altLead.hidden = false;
+    altLead.textContent = "令牌只存在这台设备上";
+    if (alt) alt.classList.add("sep-top");
+    return;
+  }
+  if (standalone) {
+    const input = document.createElement("input");
+    input.id = "gate-user";
+    input.type = "text";
+    input.placeholder = "GitHub 用户名";
+    input.spellcheck = false;
+    input.autocomplete = "off";
+    input.autocapitalize = "off";
+    input.style.cssText = "width:100%;height:34px;background:var(--bg-layer-1);border:1px solid var(--border-l1);" +
+      "border-radius:8px;color:var(--label-primary);font:inherit;font-size:13px;padding:0 11px;margin-bottom:10px";
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { const go = document.getElementById("gate-go"); if (go && !go.disabled) go.click(); }
+    });
+    main.appendChild(input);
+    const go = document.createElement("button");
+    go.className = "primary";
+    go.id = "gate-go";
+    go.textContent = "看我的数据";
+    go.onclick = () => gateUser(go);
+    main.appendChild(go);
+    // 令牌这条路在手机上也得能按下去：填了字才有东西可点
+    const tg = document.getElementById("gate-token-go");
+    const tk = document.getElementById("gate-token");
+    if (tg && tk) {
+      tg.hidden = false;
+      tg.onclick = () => gatePaste(tg);
+      tk.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !tg.disabled) { e.preventDefault(); tg.click(); }
+      });
+    }
+    return;
+  }
   const btn = document.createElement("button");
   btn.className = "primary";
   btn.id = "gate-go";
@@ -1849,22 +1959,36 @@ async function gatePaste(btn) {
     return;
   }
   btn.disabled = true;
-  gateSay("正在核对…");
+  const label = btn.textContent;
+  btn.textContent = "正在核对…";
+  gateSay("");
   try {
     const out = await gatePost("/api/auth", { token });
     gateSay("已绑定 " + out.login + "，" + out.repos + " 个仓库");
     await gateDone(out);
   } catch (e) {
     gateSay(e.message);
+  } finally {
+    btn.textContent = label;
     btn.disabled = false;
   }
 }
+document.getElementById("flow-token").onclick = () => {
+  gateOpen(GATE.state || {});
+  const t = document.getElementById("gate-token");
+  if (t) t.focus();
+};
 document.getElementById("gate-new").href =
   "https://github.com/settings/tokens/new?scopes=repo,read:user&description=github-overview";
 document.getElementById("gate-token").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") { const b = document.getElementById("gate-go"); if (b && !b.disabled) b.click(); }
+  if (e.key !== "Enter") return;
+  // 独立模式有自己的令牌按钮；服务模式下主按钮本来就是绑令牌
+  const tg = document.getElementById("gate-token-go");
+  const b = !tg || tg.hidden ? document.getElementById("gate-go") : tg;
+  if (b && !b.disabled) { e.preventDefault(); b.click(); }
 });
 async function gateBoot() {
+  await soloReady();
   try {
     const st = await fetch("/api/auth", { cache: "no-store" }).then((r) => r.json());
     GATE.state = st;
@@ -1872,11 +1996,50 @@ async function gateBoot() {
   } catch { /* 服务没起来时别挡着页面的错误提示 */ }
 }
 
-loadRepos().then(() => { pull(currentRange); loadInterval(); });
-gateBoot();
-softRefresh();
+// 独立模式下引擎要等脚本装完才挂上 window，先等它；有服务进程时这一步直接跳过。
+// 连带把首次取数也挡在它后面：早于它发的 /api/* 会撞到 file:// 上，白报一次错。
+function soloReady() {
+  if (document.documentElement.dataset.solo !== "1") return Promise.resolve();
+  if (window.DGO_STANDALONE) return Promise.resolve();
+  return new Promise((res) => {
+    const t0 = Date.now();
+    const tick = setInterval(() => {
+      if (window.DGO_STANDALONE || Date.now() - t0 > 10000) { clearInterval(tick); res(); }
+    }, 60);
+  });
+}
+soloReady().then(() => {
+  if (document.documentElement.dataset.solo === "1" && !window.DGO_STANDALONE) {
+    repoNote("引擎没加载起来");
+  }
+  loadRepos().then(() => { pull(currentRange); loadInterval(); });
+  gateBoot();
+  softRefresh();
+});
 let rzT;
 addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => render(currentRange), 160); });
+</script>
+<script>
+  // 只有独立模式才装引擎：有服务进程时所有 /api/* 都由服务答，页面不用自己算。
+  // 用经典脚本按序插入，不用 module —— file:// 下 import 会被 CORS 拦掉。
+  if (document.documentElement.dataset.solo === "1") {
+    const add = (src) =>
+      new Promise((ok, no) => {
+        const s = document.createElement("script");
+        s.src = src;
+        s.async = false;
+        s.onload = ok;
+        s.onerror = () => no(new Error(src));
+        document.head.appendChild(s);
+      });
+    add("engine.bundle.js")
+      .then(() => add("standalone.js"))
+      .catch((e) => {
+        console.error("solo boot", e);
+        const out = document.getElementById("gate-out");
+        if (out) out.textContent = "引擎没加载起来";
+      });
+  }
 </script>
 </body>
 </html>

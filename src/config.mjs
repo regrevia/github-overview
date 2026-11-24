@@ -6,6 +6,9 @@ export const CONFIG_DIR = process.env.GITHUB_OVERVIEW_HOME || join(homedir(), ".
 export const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 export const STORE_PATH = join(CONFIG_DIR, "store.json");
 
+// parseRepo/normalizeConfig/parseRepos 在 config-core.mjs（浏览器侧也要用），这里补回同样的导出
+export { parseRepo, normalizeConfig, parseRepos } from "./config-core.mjs";
+
 export function readConfig() {
   if (!existsSync(CONFIG_PATH)) return {};
   try {
@@ -33,40 +36,4 @@ export function resolveToken(cfg = readConfig()) {
   if (cfg.token) return cfg.token;
   // 不借本机 gh 的登录：那可能是别人的账号，绑错比不绑更糟
   return "";
-}
-
-export function parseRepo(spec) {
-  const m = /^([\w.-]+)\/([\w.-]+)$/.exec(String(spec || "").trim());
-  if (!m) throw new Error(`仓库写法应为 owner/repo，收到：${spec}`);
-  return { owner: m[1], name: m[2] };
-}
-
-// 统一成 { user, repos: [{ repo, npm }] }，并兼容旧的单仓库字段
-export function normalizeConfig(raw = {}) {
-  const cfg = { ...raw };
-  let repos = cfg.repos;
-  if (!Array.isArray(repos) || !repos.length) {
-    repos = cfg.repo ? [{ repo: cfg.repo, npm: cfg.npm }] : [];
-  }
-  cfg.repos = repos
-    .map((r) => (typeof r === "string" ? { repo: r } : r))
-    .filter((r) => r && r.repo)
-    .map((r) => {
-      const { owner, name } = parseRepo(r.repo);
-      // 只有手工写了 npm 才算绑定，否则留给 registry 核对归属
-      return { repo: `${owner}/${name}`, ...(r.npm ? { npm: r.npm } : {}) };
-    });
-  if (!cfg.user && cfg.repos.length) cfg.user = cfg.repos[0].repo.split("/")[0];
-  return cfg;
-}
-
-export function parseRepos(spec) {
-  return String(spec || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => {
-      const { owner, name } = parseRepo(s);
-      return { repo: `${owner}/${name}` };
-    });
 }
