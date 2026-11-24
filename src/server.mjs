@@ -411,7 +411,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
               run: ({ repo }) => {
                 const k2 = repo && engine.targets.some((t) => t.key === repo) ? repo : key;
                 const d = build(windowDays, k2).contributions;
-                const pick = (x, kind) => ({ kind, n: x.number, title: x.title, by: x.author, state: x.merged ? "merged" : x.state, at: x.mergedAt || x.closo, c || x.createdAt, url: x.url });
+                const pick = (x, kind) => ({ kind, n: x.number, title: x.title, by: x.author, state: x.merged ? "merged" : x.state, at: x.mergedAt || x.closedAt || x.createdAt, url: x.url });
                 const all = [...d.pulls.map((x) => pick(x, "PR")), ...d.issues.map((x) => pick(x, "issue"))];
                 // 还开着/没合的单子可能落在窗口外，明细里必须带上，不然模型只能报个数
                 const openItems = [

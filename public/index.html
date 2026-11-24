@@ -120,6 +120,7 @@
   .head.proj .srcs { flex: 0 0 auto; }
   .note { font-size: 12px; color: var(--label-secondary); }
   .key { font-size: 12px; color: var(--label-secondary); display: inline-flex; align-items: center; gap: 5px; }
+  .keys { display: inline-flex; align-items: center; gap: 10px; }
   .key i.dash { background: var(--event); width: 2px; height: 11px; opacity: .55; }
   .key i { width: 8px; height: 8px; border-radius: 2px; }
 
@@ -267,9 +268,11 @@
     .repo-wrap { min-width: 0; max-width: 100%; }
     .repo-wrap > .repo { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; order: -1; }
     .repo-wrap > .repo #repo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .repo-wrap > .repo-note { font-size: 12px; color: var(--label-secondary); white-space: nowrap; }
+    .repo-wrap > .repo-note { font-size: 12px; color: var(--label-secondary); white-space: nowrap; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .spacer { display: none; }
     .seg { margin-left: auto; }
+    /* 分段按钮占满一行后，主题和刷新落到下一行贴右，别让两个图标散在左边 */
+    #theme { margin-left: auto; }
     .kpi-value { font-size: 24px; }
     .kpi:last-child { grid-column: 1 / -1; border-left: none; padding-left: 0; }
     .split { grid-template-columns: 1fr; gap: 20px; }
@@ -281,6 +284,15 @@
     .stats { grid-template-columns: 1fr 1fr; gap: 14px; }
     .stats b { font-size: 18px; }
     thead th:nth-child(3), tbody td:nth-child(3) { display: none; }
+    /* 窄窗口标题会被右侧的药丸挤成一列，改成让它整行、药丸自己截断 */
+    .head { flex-wrap: wrap; row-gap: 6px; }
+    .head h2 { flex: 0 0 auto; white-space: nowrap; }
+    .head .src { display: inline-block; flex: 0 1 auto; min-width: 0; max-width: 100%; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* 标题加图例在一行放不下时，图例整条落到下一行，别把「流量」挤成一列 */
+    #flow-head { flex-wrap: wrap; row-gap: 6px; }
+    #flow-head h2, #flow-head .note { flex: 0 0 auto; white-space: nowrap; }
+    #flow-head .keys { flex: 0 0 auto; }
+    #flow-head .key { white-space: nowrap; }
   }
 </style>
 </head>
@@ -354,9 +366,11 @@
           <h2>流量</h2>
           <span class="note" id="range-note"></span>
           <div class="spacer"></div>
-          <span class="key"><i style="background:var(--brand)"></i>浏览</span>
-          <span class="key"><i style="background:var(--machine)"></i>克隆</span>
-          <span class="key"><i class="dash"></i>发版</span>
+          <span class="keys">
+            <span class="key"><i style="background:var(--brand)"></i>浏览</span>
+            <span class="key"><i style="background:var(--machine)"></i>克隆</span>
+            <span class="key"><i class="dash"></i>发版</span>
+          </span>
         </div>
         <div class="chart" id="c-flow"></div>
         <div class="empty" id="flow-empty" hidden>
@@ -431,7 +445,7 @@
         <div class="repo-grid" id="repo-list"></div>
       </section>
 
-     "sumction class="sec" id="sec-comp">
+      <section class="sec" id="sec-comp">
         <div class="head"><h2>构成<span class="head-note" id="comp-note">· 各仓最近一次快照</span></h2></div>
         <div class="split">
           <div class="donut" id="donut"></div>
@@ -629,7 +643,11 @@ function flowChart(node, days) {
 
   const peak = DATA.reduce((a, b) => b.v > a.v ? b : a);
   const pi = dom.findIndex(d => d.rec === peak);
-  svg.appendChild(el("text", { x: x(pi), y: yl(peak.v) - 8, "text-anchor": "middle", class: "val-label" }, fmt(peak.v)));
+  // 峰值落在首末点时标签会挤出画布、压住左右轴的刻度数字，往画布内侧收
+  const px = x(pi), near = 30;
+  const anchor = px - P.l < near ? "start" : W - P.r - px < near ? "end" : "middle";
+  const lx = anchor === "start" ? Math.max(px + 14, P.l + 14) : anchor === "end" ? Math.min(px - 14, W - P.r - 14) : px;
+  svg.appendChild(el("text", { x: lx, y: yl(peak.v) - 8, "text-anchor": anchor, class: "val-label" }, fmt(peak.v)));
 
   axisIdx(dom.length, iw).forEach((i) => {
     svg.appendChild(el("text", { x: x(i), y: H - 4, "text-anchor": "middle", class: "tick-label" }, dom[i].label));
@@ -1362,7 +1380,8 @@ function applyLive(json) {
   const relCap = repo.fullName === "全部仓库" ? 120 : 200;
   const relCapped = rels.length >= relCap;
   document.getElementById("k-rel").textContent = relCapped ? rels.length + "+" : rels.length;
-  const relSpan = repo.fullName === "全部仓库"
+  // 窗口里一个发版都没有时 rels 是空的，别去读首末项
+  const relSpan = !rels.length ? "" : repo.fullName === "全部仓库"
     ? (() => { const first = label(rels[rels.length - 1].at), last = label(rels[0].at); return first === last ? last : first + " → " + last; })()
     : (() => { const first = bareTag(rels[rels.length - 1].tag), last = bareTag(rels[0].tag); return first === last ? last : first + " → " + last; })();
   // 截断时说清这个区间只是最近若干个，别让人把 11-07 当成窗口起点

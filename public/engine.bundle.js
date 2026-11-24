@@ -1087,5 +1087,15 @@
   }
 
   // public/engine-entry.js
+  if (!Array.prototype.at) {
+    Object.defineProperty(Array.prototype, "at", {
+      writable: true,
+      configurable: true,
+      value: function(n) {
+        var i = Math.trunc(Number(n)) || 0;
+        return this[i < 0 ? this.length + i : i];
+      }
+    });
+  }
   window.DGO_ENGINE = Object.assign({}, engine_exports, { emptyStore, emptySlice, series });
 })();
