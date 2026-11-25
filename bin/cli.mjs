@@ -2,6 +2,7 @@
 import { readConfig, writeConfig, parseRepo, normalizeConfig, resolveToken, CONFIG_PATH } from "./../src/config.mjs";
 import { createApp } from "./../src/server.mjs";
 import { startLoop } from "./../src/loop.mjs";
+import { authState } from "./../src/auth.mjs";
 import { readFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 
@@ -149,6 +150,9 @@ try {
     }
     // 同步节奏放在 src/loop.mjs，桌面端跑的也是这一份
     startLoop(app, { intervalHours, contribMinutes, onLog: (line) => console.log(line) });
+    // 首屏会问一次「绑的是谁」，进程刚起来还没认过：先自己认一次，
+    // 等等第一次打开就不用等这次网络往返（失败了不影响，请求时再认）
+    authState().catch(() => {});
     await new Promise(() => {});
   }
 

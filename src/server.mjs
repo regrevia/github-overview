@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { gzipSync, brotliCompressSync, constants as ZC } from "node:zlib";
+import { createHash } from "node:crypto";
 import { join, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readConfig, writeConfig, resolveToken, normalizeConfig } from "./config.mjs";
@@ -14,6 +16,46 @@ const PUBLIC = join(ROOT, "public");
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json" };
 // 摘要别拖慢页面：先回模板，AI 结果进缓存下一次带出来
 const SUM_CACHE = new Map();
+
+// 静态文件按 mtime 缓存压缩结果：首页 100 KB 裸传，压缩后约 30 KB，
+// 手机上差的是这一下。ETag 命中回 304，不重复传。
+const ASSET_CACHE = new Map();
+const compressible = (type) => /^(text\/|application\/(json|javascript))/.test(type);
+
+function serveAsset(req, res, full, type) {
+  const st = statSync(full);
+  let hit = ASSET_CACHE.get(full);
+  if (!hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size) {
+    const body = readFileSync(full);
+    const etag = `"${createHash("sha1").update(body).digest("base64url").slice(0, 16)}"`;
+    hit = { mtimeMs: st.mtimeMs, size: st.size, body, etag };
+    if (compressible(type)) {
+      hit.gzip = gzipSync(body, { level: 6 });
+      hit.br = brotliCompressSync(body, { params: { [ZC.BROTLI_PARAM_QUALITY]: 9 } });
+    }
+    // 首页跟着版本走，旧的别留着；静态文件名不带指纹，所以一律回源校验
+    ASSET_CACHE.set(full, hit);
+    if (ASSET_CACHE.size > 32) ASSET_CACHE.clear();
+  }
+  const headers = { "content-type": type, etag: hit.etag, "cache-control": "no-cache", vary: "accept-encoding" };
+  if (req.headers["if-none-match"] === hit.etag) {
+    res.writeHead(304, headers);
+    return res.end();
+  }
+  const accept = String(req.headers["accept-encoding"] || "");
+  if (hit.br && /\bbr\b/.test(accept)) {
+    headers["content-encoding"] = "br";
+    res.writeHead(200, { ...headers, "content-length": hit.br.length });
+    return res.end(hit.br);
+  }
+  if (hit.gzip && /\bgzip\b/.test(accept)) {
+    headers["content-encoding"] = "gzip";
+    res.writeHead(200, { ...headers, "content-length": hit.gzip.length });
+    return res.end(hit.gzip);
+  }
+  res.writeHead(200, { ...headers, "content-length": hit.body.length });
+  return res.end(hit.body);
+}
 
 export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMinutes = 15, cfg: cfgIn } = {}) {
   // 空配置也要能起来：先给绑定页，绑完 reload() 再按新配置建目标
@@ -34,8 +76,24 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     const send = (code, body, type = "application/json; charset=utf-8") => {
-      res.writeHead(code, { "content-type": type, "cache-control": "no-store" });
-      res.end(typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body));
+      const buf = typeof body === "string" || Buffer.isBuffer(body) ? Buffer.from(body) : Buffer.from(JSON.stringify(body));
+      const head = { "content-type": type, "cache-control": "no-store" };
+      // 90 天窗口的 JSON 有 50 KB 上下，手机走 Wi-Fi 也该压一下；小回包不压，省了反而慢
+      const accept = String(req.headers["accept-encoding"] || "");
+      if (buf.length > 1024 && compressible(type)) {
+        if (/\bbr\b/.test(accept)) {
+          const z = brotliCompressSync(buf, { params: { [ZC.BROTLI_PARAM_QUALITY]: 5 } });
+          res.writeHead(code, { ...head, "content-encoding": "br", vary: "accept-encoding", "content-length": z.length });
+          return res.end(z);
+        }
+        if (/\bgzip\b/.test(accept)) {
+          const z = gzipSync(buf, { level: 6 });
+          res.writeHead(code, { ...head, "content-encoding": "gzip", vary: "accept-encoding", "content-length": z.length });
+          return res.end(z);
+        }
+      }
+      res.writeHead(code, { ...head, "content-length": buf.length });
+      res.end(buf);
     };
     try {
       // 绑定账号：设备码流不需要用户手抄 token，也支持直接粘贴 PAT
@@ -457,7 +515,7 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
       let file = url.pathname === "/" ? "/index.html" : url.pathname;
       const full = join(PUBLIC, file);
       if (!full.startsWith(PUBLIC) || !existsSync(full)) return send(404, "not found", "text/plain");
-      return send(200, await readFile(full), MIME[extname(full)] || "application/octet-stream");
+      return serveAsset(req, res, full, MIME[extname(full)] || "application/octet-stream");
     } catch (e) {
       return send(500, { error: String(e.message || e) });
     }

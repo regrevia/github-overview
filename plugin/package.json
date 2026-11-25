@@ -1,6 +1,6 @@
 {
   "name": "dsh-github-overview",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Reads the local GitHub Overview dashboard inside the agent: traffic, unique visitors, clones, npm downloads, the funnel, per-repository rows and external contributions.",
   "type": "module",
   "main": "index.js",

@@ -71,8 +71,12 @@ export function series(slice, days, npmDaily = {}) {
     const row = slice.days[k] || {};
     return [{ d: k, v: row.v ?? null, u: row.u ?? null, c: row.c ?? null, cu: row.cu ?? null, n: npmDaily[k] ?? slice.npm?.[k] ?? null }];
   }
+  // N 天窗口也只数已结算的日子：GitHub 的 14 天是「昨天往回数 14 天」，
+  // 把今天那格空数进去会让「近 14 天」实际只有 13 天的量（少报一整天的浏览）
+  const end = new Date(today);
+  end.setUTCDate(end.getUTCDate() - 1);
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
+    const d = new Date(end);
     d.setUTCDate(d.getUTCDate() - i);
     const k = d.toISOString().slice(0, 10);
     const row = slice.days[k] || {};

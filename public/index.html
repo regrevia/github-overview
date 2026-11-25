@@ -2051,13 +2051,13 @@ addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => ren
         s.onerror = () => no(new Error(src));
         document.head.appendChild(s);
       });
-    add("engine.bundle.js")
-      .then(() => add("standalone.js"))
-      .catch((e) => {
-        console.error("solo boot", e);
-        const out = document.getElementById("gate-out");
-        if (out) out.textContent = "引擎没加载起来";
-      });
+    // 两份并行取下、按插入顺序执行（async=false 保证顺序），省掉一次串行往返
+    add("engine.bundle.js");
+    add("standalone.js").catch((e) => {
+      console.error("solo boot", e);
+      const out = document.getElementById("gate-out");
+      if (out) out.textContent = "引擎没加载起来";
+    });
   }
 </script>
 </body>

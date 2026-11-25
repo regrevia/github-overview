@@ -64,7 +64,17 @@ export async function authState() {
   // 本机 gh 里躺着的登录不算——别人在这台电脑上打开，不该直接看到前一个人的账号。
   const fromEnv = Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN);
   const explicit = fromEnv || Boolean(cfg.token);
-  const me = explicit ? await whoami(resolveToken(cfg)) : null;
+  // 过期的缓存先照用、后台再核对：绑定状态变一次不该让首屏等一次网络往返。
+  // 只有拿不到网络（不是 401/403）才沿用旧值，撤销的凭据由 whoami 自己删缓存。
+  const token = explicit ? resolveToken(cfg) : null;
+  const cached = token ? meCache.get(meKey(token)) : null;
+  if (cached && Date.now() - cached.at >= ME_TTL && !cached.busy) {
+    cached.busy = true;
+    whoami(token, { fresh: true }).finally(() => {
+      cached.busy = false;
+    });
+  }
+  const me = explicit ? await whoami(token) : null;
   const source = !me ? "none" : fromEnv ? "env" : "config";
   return {
     bound: Boolean(me),
