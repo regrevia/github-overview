@@ -244,7 +244,12 @@ export async function askQuestion(ctx, question, tools = []) {
         return { source: "data", answer: `这轮回答的数字对不上，先按数据说：${lines.join("；")}。` };
       }
     }
-    return { source: "ai", answer: text.replace(/\s+/g, " ").slice(0, 400) };
+    // 面板只有一栏宽，四句以上要滚好几屏；只留结论，多出来的维度回面板里看
+    text = text.replace(/\s+/g, " ");
+    const sents = text.match(/[^。！？!?]+[。！？!?]?/g) || [];
+    if (sents.length > 3) text = sents.slice(0, 3).join("").replace(/[，、；：,;:]\s*$/, "") + "。";
+    if (!/[。！？!?]$/.test(text)) text += "。";
+    return { source: "ai", answer: text.slice(0, 400) };
   } catch (e) {
     const slow = e?.name === "TimeoutError" || /abort|timeout/i.test(e?.message || "");
     return { source: "error", answer: slow ? "模型超时，再问一次。" : "模型没答，再问一次。" };

@@ -309,6 +309,20 @@ export function createApp({ repo, repos, days = 7, intervalHours = 6, contribMin
           const own = key === ALL ? "" : `本仓 ${num(data.totals.uniques)} 位访客；全站`;
           return send(200, { answer: `${own || "近 " + Math.min(data.range.covered || 14, 14) + " 天"}访客最多：${body}。`, links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })), source: "data" });
         }
+        // 「哪个仓库涨得多」不提 star，也别丢给模型花 20 秒：star 增长本来就在数据里
+        // 只在全站范围排；单仓自己涨多少由下面的 star 分支答
+        if (key === ALL && !/star|关注数|收藏|浏览|流量|访客|npm|下载|发版|发布/.test(question)
+          && /哪个|哪几个|谁|排行|最多/.test(question) && /涨|增|多了|加的/.test(question)) {
+          const rows = rankBy((d) => d.starGrowth?.delta ?? 0);
+          if (!rows.length) return send(200, { answer: `近 ${windowDays} 天没有仓库涨 star（有 star 记录的只有 ${data.range.covered || windowDays} 天）。`, source: "data" });
+          const sg = data.starGrowth;
+          const body = rows.map((r, i) => `${["", "其次 ", "再次 ", "还有 "][Math.min(i, 3)]}${r.name} +${num(r.v)}`).join("，");
+          return send(200, {
+            answer: `全站近 ${sg?.span ?? windowDays} 天新增 ${num(sg?.delta ?? 0)} 个 star，涨得最多：${body}。`,
+            links: rows.map((r) => ({ label: r.name, url: `https://github.com/${r.key}` })),
+            source: "data",
+          });
+        }
         if (/star|关注数|收藏/.test(question)) {
           const grown = /涨|增|新|多了|加/.test(question);
           const askWho = /哪个|哪几个|最多|排行|谁/.test(question);

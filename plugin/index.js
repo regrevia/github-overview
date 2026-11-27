@@ -224,12 +224,12 @@ const definition = {
     const repo = typeof args?.repo === 'string' && args.repo.trim() && args.repo.trim() !== '全部仓库' ? args.repo.trim() : undefined
 
     const found = await locate()
-    if (!found) return { ok: false, reason: '看板没在运行：先 npx github-overview start，或打开桌面端' }
+    if (!found) return { ok: false, reason: '看板没运行 · npx github-overview start' }
 
     try {
       const data = await read(found, days, repo)
-      if (data.needsBinding) return { ok: false, reason: '看板还没绑定账号：在页面里用 GitHub 登录一次' }
-      if (data.empty) return plain({ ok: true, reason: '还没有同步数据：在页面上点一次刷新', repo: repo ?? '全部仓库', days })
+      if (data.needsBinding) return { ok: false, reason: '没绑定账号 · 页面里用 GitHub 登录一次' }
+      if (data.empty) return plain({ ok: true, reason: '没有数据 · 页面上点一次刷新', repo: repo ?? '全部仓库', days })
       return plain({ ok: true, origin: found, ...digest(data) })
     } catch (error) {
       return plain({ ok: false, reason: String(error?.message ?? error) })

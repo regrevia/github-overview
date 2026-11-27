@@ -601,7 +601,7 @@ export function makeEngine({ store: storeIn, save, cfg: cfgIn, repos, days = 7 }
     const tail = targets.filter((x) => x.key.toLowerCase().endsWith("/" + q.toLowerCase()));
     return tail.length === 1 ? tail[0].key : null;
   }
-  const noRepo = (key) => `没有绑定这个仓库：${key}。右上角切换范围，或在 config 里加上它。`;
+  const noRepo = (key) => `没有绑定这个仓库：${key}`;
   // 以当前窗口最后一天为终点、往前 14 个日历日的逐日浏览和
   const last14Days = (endD) => {
     if (!endD) return [];

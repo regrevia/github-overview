@@ -236,9 +236,12 @@
   .gate-out { font-size: 12px; color: var(--label-secondary); margin-top: 10px; min-height: 16px; }
   .gate-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; letter-spacing: .1em; color: var(--label-primary); margin: 8px 0; }
   .cfg.open { display: block; }
-  .ask-out { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: var(--label-secondary); }
-  .ask-out a { color: var(--brand); text-decoration: none; }
+  /* 回答是这个面板的主内容，跟摘要同一档字号；问题只当上下文留在上面一行 */
+  .ask-out { margin: 10px 0 0; font-size: 14px; line-height: 1.6; color: var(--label-primary); }
+  .ask-out .ask-q { display: block; margin-bottom: 3px; font-size: 12px; color: var(--label-secondary); }
+  .ask-out a { display: block; width: fit-content; margin-top: 4px; font-size: 12px; color: var(--brand); text-decoration: none; }
   .ask-out a:hover { text-decoration: underline; }
+  .ask input:disabled, .ask button:disabled { opacity: .6; }
   .foot { display: flex; align-items: baseline; gap: 8px; font-size: 12px; color: var(--label-secondary); margin-top: 12px; }
   #sum-src { margin-right: auto; }
   .link { color: var(--label-secondary); border: 0; height: auto; padding: 0; background: none; text-decoration: underline; text-underline-offset: 2px; }
@@ -394,7 +397,7 @@
         <div class="stats">
           <div><span>issue</span><b id="s-issues">—</b><em id="s-issues-sub"></em></div>
           <div><span>PR</span><b id="s-prs">—</b><em id="s-prs-sub"></em></div>
-          <div><span>安全告警 · 快照</span><b id="s-alerts">关闭</b><em id="s-alerts-sub">无数据</em></div>
+          <div><span>安全告警</span><b id="s-alerts">关闭</b><em id="s-alerts-sub"></em></div>
         </div>
       </section>
 
@@ -446,7 +449,7 @@
       </section>
 
       <section class="sec" id="sec-comp">
-        <div class="head"><h2>构成<span class="head-note" id="comp-note">· 各仓最近一次快照</span></h2></div>
+        <div class="head"><h2>构成</h2></div>
         <div class="split">
           <div class="donut" id="donut"></div>
           <div class="ranks" id="ranks"></div>
@@ -485,7 +488,6 @@
         <div class="rowline"><span>上次</span><b id="r-last">—</b></div>
         <div class="rowline" id="r-contrib-row" hidden><span>贡献</span><b id="r-contrib">—</b></div>
         <div class="rowline"><span>已存</span><b id="r-days">8 天</b></div>
-        <div class="rowline" style="margin-top:10px"><span>数据源</span><b>GitHub · npm</b></div>
       </div>
     </aside>
   </div>
@@ -497,7 +499,7 @@
     <p id="gate-lead">填你的 GitHub 用户名，公开数据直接读。</p>
     <div id="gate-main"></div>
     <div class="gate-alt">
-      <p id="gate-alt-lead" style="margin:0 0 8px">有访问令牌才能看流量和克隆</p>
+      <p id="gate-alt-lead" style="margin:0 0 8px"></p>
       <input id="gate-token" type="password" placeholder="ghp_… 或 github_pat_…" spellcheck="false" autocomplete="off">
       <p style="margin:8px 0 0;display:flex;align-items:center;gap:14px">
         <button class="ghost" id="gate-token-go" hidden>用令牌登录</button>
@@ -1037,7 +1039,7 @@ function renderTop() {
     { label: "浏览最多", k: "views", total: sum((r) => r.views), empty: "没有浏览" },
     { label: "访客最多", k: "uniques", total: sum((r) => r.uniques), empty: "没有访客", note: currentRange === 1 ? "当天访客" : "14 天去重" },
     { label: "涨星最多", k: "starDelta", total: sum((r) => r.starDelta), empty: "没有新增" },
-    { label: "下载最多", k: "npm", total: sum((r) => r.npm), empty: hasNpm ? "没有下载" : "还没采集到", emptyVal: hasNpm ? "0" : "—" },
+    { label: "下载最多", k: "npm", total: sum((r) => r.npm), empty: hasNpm ? "没有下载" : "—", emptyVal: hasNpm ? "0" : "—" },
   ];
   for (const m of metrics) {
     const best = [...rows].sort((a, b) => (b[m.k] ?? -1) - (a[m.k] ?? -1))[0];
@@ -1409,7 +1411,7 @@ function applyLive(json) {
     issub.textContent = ic ? `窗口内 ${ic} 个都已关闭` : "没有外部 issue";
   } else {
     const replied = pending.some((x) => (x.comments ?? 0) > 0);
-    issub.textContent = (ic ? "" : "窗口内没有新的；") + (pending.length === 1 ? (replied ? "还开着：" : "没回：") : `${replied ? "还开着" : "没回"} ${pending.length} 个：`);
+    issub.textContent = (ic ? "" : "没有新的；") + (pending.length === 1 ? (replied ? "还开着：" : "没回：") : `${replied ? "还开着" : "没回"} ${pending.length} 个：`);
     addLinks(issub, pending);
   }
   document.getElementById("s-prs").textContent = pc + " 个";
@@ -1418,13 +1420,13 @@ function applyLive(json) {
   const openPrs = c.open ? c.open.pulls : c.pulls.filter((x) => !x.merged);
   prSub.textContent = "";
   if (openPrs.length) {
-    prSub.textContent = (prMerged ? `已合并 ${prMerged} 个 · ` : "") + (pc ? "" : "窗口内没有新的；")
+    prSub.textContent = (prMerged ? `已合并 ${prMerged} 个 · ` : "") + (pc ? "" : "没有新的；")
       + (openPrs.length === 1 ? "待合：" : `待合 ${openPrs.length} 个：`);
     addLinks(prSub, openPrs);
   } else if (!pc) {
     prSub.textContent = "没有外部 PR";
   } else {
-    prSub.textContent = `窗口内 ${pc} 个都已处理`;
+    prSub.textContent = `${pc} 个都已处理`;
   }
   const fresh = document.getElementById("contrib-fresh");
   if (fresh) {
@@ -1455,7 +1457,7 @@ function applyLive(json) {
     asub.textContent = "无数据";
   } else if (!total) {
     // 0 条要说清零的含义，不能拿「功能已开启」当解释
-    asub.textContent = json.repo && json.repo.fullName === "全部仓库" ? "全部仓库都没有待处理" : "没有待处理";
+    asub.textContent = "";
   } else if (Array.isArray(json.repos)) {
     const flat = opened.flatMap((k) => (al[k].repos || []).filter((r) => r.open > 0).map((r) => ({ type: k, ...r })));
     flat.sort((x, y) => y.open - x.open);
@@ -1471,8 +1473,6 @@ function applyLive(json) {
       asub.appendChild(a);
       asub.append(` · ${atype[top.type]}`);
       asub.title = flat.map((r) => `${r.key.split("/")[1]} ${atype[r.type]} ${r.open}`).join("\n");
-    } else {
-      asub.textContent = "待处理";
     }
   } else {
     const parts = opened.filter((k) => al[k].open > 0).map((k) => `${atype[k]} ${al[k].open}`);
@@ -1481,7 +1481,7 @@ function applyLive(json) {
     a.target = "_blank";
     a.rel = "noreferrer";
     asub.append(a);
-    const txt = parts.length ? parts.join("、") : "待处理";
+    const txt = parts.length ? parts.join("、") : "";
     a.textContent = txt;
     asub.title = "依赖漏洞 / 代码扫描 / 密钥泄漏";
   }
@@ -1493,7 +1493,7 @@ function applyLive(json) {
   if (npmSub) {
     const span = currentRange === 1 ? "当天" : `近 ${Math.min(currentRange, LIVE.range?.covered || currentRange)} 天`;
     const noPkg = repo.fullName !== "全部仓库" && LIVE.repo && !LIVE.repo.npmPkg;
-    npmSub.textContent = noPkg ? "没有关联 npm 包" : npmWin == null ? "还没采集到"
+    npmSub.textContent = noPkg ? "没有关联 npm 包" : npmWin == null ? "—"
       : (repo.fullName === "全部仓库" && repo.count ? repo.count + " 个仓 · " : "") + span;
   }
   const days = json.range?.storedDays || 0;
@@ -1699,7 +1699,7 @@ async function loadSummary(days, tries = 0) {
     const why = { checked: "数字没对上", empty: "模型没返回内容" }[data.error] || (data.error ? "请求失败" : "");
     const srcEl = document.getElementById("sum-src");
     // 没有 error 的 template 是后台还在生成，不是失败，别写成「模板兜底」
-    if (srcEl) srcEl.textContent = data.source === "ai" ? "" : data.source === "none" ? "未配置模型" : why ? "模板兜底 · " + why : "模型生成中…";
+    if (srcEl) srcEl.textContent = data.source === "ai" ? "" : data.source === "none" ? "未配置模型" : why || "模型生成中…";
     const modelEl = document.getElementById("ai-model");
     if (modelEl) modelEl.textContent = data.source === "ai" ? (data.model || "") : "";
     // 摘要第一次生成要几十秒，先给模板，生成好了再换过来
@@ -1710,44 +1710,70 @@ async function loadSummary(days, tries = 0) {
   }
 }
 
-document.querySelector(".ask button").addEventListener("click", async () => {
-  const input = document.querySelector(".ask input");
-  const btn = document.querySelector(".ask button");
-  const out = document.getElementById("ask-out");
-  const q = input.value.trim();
-  if (!q) return;
-  input.disabled = true;
-  btn.disabled = true;
-  out.hidden = false;
-  out.textContent = "在查…";
-  const slow = setTimeout(() => { if (!out.hidden && /在查/.test(out.textContent)) out.textContent = "还在查…"; }, 8000);
-  const ac = new AbortController();
-  const to = setTimeout(() => ac.abort(), 32000);
-  try {
-    const r = await postJson("/api/ask", { question: q, repo: currentRepo, days: currentRange }, { signal: ac.signal });
-    const d = await r.json();
-    out.replaceChildren();
-    out.appendChild(document.createTextNode(d.answer || "没答上来。"));
-    for (const l of d.links || []) {
-      out.appendChild(document.createElement("br"));
-      const a = document.createElement("a");
-      a.href = l.url;
-      a.target = "_blank";
-      a.rel = "noreferrer";
-      a.textContent = l.label;
-      out.appendChild(a);
-    }
-    if (d.source === "ai") input.value = "";
-  } catch (e) {
-    out.textContent = e && e.name === "AbortError" ? "等太久了，再问一次。" : "连不上本地服务。";
-  } finally {
-    clearTimeout(to);
-    clearTimeout(slow);
-    input.disabled = false;
-    btn.disabled = false;
-  }
-});
+const ASK = document.querySelector(".ask");
+const ASK_Q = document.getElementById("ask-q");
+const ASK_BTN = ASK.querySelector("button");
+const ASK_OUT = document.getElementById("ask-out");
+let askBusy = false;
 
+// 回答比问题长得多：把问题留成一行小字，答案按正文排，链接单独成行，不糊成一段
+function askRender(question, ans) {
+  const box = document.createDocumentFragment();
+  const q = document.createElement("span");
+  q.className = "ask-q";
+  q.textContent = question;
+  box.appendChild(q);
+  box.appendChild(document.createTextNode(ans));
+  for (const l of askLinks) {
+    const a = document.createElement("a");
+    a.href = l.url;
+    a.target = "_blank";
+    a.rel = "noreferrer";
+    a.textContent = l.label;
+    box.appendChild(a);
+  }
+  ASK_OUT.replaceChildren(box);
+}
+let askLinks = [];
+
+async function askSend() {
+  const q = ASK_Q.value.trim();
+  if (!q || askBusy) return;
+  askBusy = true;
+  ASK_Q.disabled = true;
+  ASK_BTN.disabled = true;
+  ASK_OUT.hidden = false;
+  askLinks = [];
+  askRender(q, "在查…");
+  const tick = setTimeout(() => { if (askBusy) askRender(q, "还在查…"); }, 8000);
+  try {
+    let r;
+    try {
+      r = await postJson("/api/ask", { question: q, repo: currentRepo, days: currentRange });
+    } catch {
+      askRender(q, "连不上看板服务，刷新页面再问。");
+      return;
+    }
+    const d = await r.json().catch(() => ({}));
+    askLinks = d.links || [];
+    // 模型超时、没配模型都在 answer 里说清楚了，原样显示，不要再包一层「没答上来」
+    askRender(q, d.answer || "这次没答上来，再问一次。");
+    // 问题已经在上面复述了一行，输入框留着同一句话就是多余的一遍
+    ASK_Q.value = "";
+  } finally {
+    clearTimeout(tick);
+    askBusy = false;
+    ASK_Q.disabled = false;
+    ASK_BTN.disabled = false;
+  }
+}
+
+ASK_BTN.addEventListener("click", askSend);
+ASK_Q.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.isComposing) return;
+  e.preventDefault();
+  askSend();
+});
 
 const segInit = document.getElementById("seg");
 [...segInit.children].forEach((b) => b.classList.toggle("on", +b.dataset.r === currentRange));
@@ -1802,23 +1828,15 @@ function gateOpen(state) {
   const standalone = Boolean(window.DGO_STANDALONE);
   const browser = !standalone && (state.loginMode === "device" || state.loginMode === "gh");
   const bound = Boolean(state && state.bound);
-  if (standalone && bound) {
-    // 已经绑上用户名，再看这一屏只可能为了一件事：补令牌
-    lead.textContent = "填访问令牌，浏览和克隆就能读出来。";
-  } else if (standalone) {
-    lead.textContent = "填你的 GitHub 用户名，公开数据直接读。";
-  } else if (browser) {
-    lead.textContent = "登录你的账号，数据只存在这台电脑上。";
-  } else {
-    lead.textContent = "粘贴访问令牌就能绑上。";
-  }
+  lead.hidden = !browser;
+  if (browser) lead.textContent = "数据只存在这台电脑上。";
   // 令牌输入是兜底，不是可选项：主路走不通时它就顶上来，别把它藏掉
   const alt = document.querySelector(".gate-alt");
   if (alt) alt.classList.toggle("sep-top", standalone || browser);
   const altLead = document.getElementById("gate-alt-lead");
   if (altLead) {
     altLead.hidden = !(standalone || browser);
-    altLead.textContent = standalone ? "填令牌才能看流量和克隆" : "改用访问令牌";
+    altLead.textContent = standalone ? "令牌只存在这台设备上" : "";
   }
   if (standalone && bound) {
     // 补令牌：主按钮就是这个动作，令牌输入框在下面
@@ -1835,7 +1853,6 @@ function gateOpen(state) {
     skip.onclick = () => gateClose();
     main.appendChild(skip);
     altLead.hidden = false;
-    altLead.textContent = "令牌只存在这台设备上";
     if (alt) alt.classList.add("sep-top");
     return;
   }
@@ -1947,7 +1964,7 @@ async function gateLogin(btn) {
   }
   const wait = document.createElement("p");
   wait.style.cssText = "margin:0;font-size:12px;color:var(--label-secondary)";
-  wait.textContent = d.userCode ? "输入这个码后确认，会自动绑上" : "确认后会自动绑上";
+  wait.textContent = "确认后会自动绑上";
   box.appendChild(wait);
   document.getElementById("gate-main").appendChild(box);
   clearInterval(GATE.timer);
