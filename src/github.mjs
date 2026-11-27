@@ -137,6 +137,7 @@ export function makeGithub(token, { owner, name }) {
         number: it.number,
         title: it.title || "",
         author,
+        state: "open",
         comments: comments ?? 0,
         createdAt: it.created_at,
         updatedAt: it.updated_at,

@@ -249,6 +249,7 @@ export function makeEngine({ store: storeIn, save, cfg: cfgIn, repos, days = 7 }
   };
 
   function aggregate(windowDays) {
+    const cw = contribWindow(windowDays);
     const slices = targets.map((t) => ({ t, s: repoStore(store, t.key) }));
     // 漏斗固定「最近 14 个完整日」：跟随窗口末行会让今天那行 0 参与、切范围时数字还会变
     const funnelEnd = () => {
@@ -437,8 +438,10 @@ export function makeEngine({ store: storeIn, save, cfg: cfgIn, repos, days = 7 }
         return ok[0] || [...all].sort(byAtDesc)[0] || null;
       })(),
       contributions: {
-        issues: issues.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
-        pulls: pulls.filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
+        from: cw.from,
+        to: cw.to,
+        issues: issues.filter(newInWindow(cw.from, cw.to)),
+        pulls: pulls.filter(newInWindow(cw.from, cw.to)),
         open: {
           issues: slices.flatMap(({ t, s }) => (s.meta?.openWork?.issues || []).map((x) => ({ ...x, repo: t.key }))).sort(byUpdatedDesc),
           pulls: slices.flatMap(({ t, s }) => (s.meta?.openWork?.pulls || []).map((x) => ({ ...x, repo: t.key }))).sort(byUpdatedDesc),
@@ -510,6 +513,17 @@ export function makeEngine({ store: storeIn, save, cfg: cfgIn, repos, days = 7 }
     const at = String(x.at || x.mergedAt || x.closedAt || x.createdAt || "").slice(0, 10);
     return !from || (at >= from && at <= to);
   };
+  // 贡献是活的 GitHub 数据，不该受流量快照滞后一天的影响：窗口按「最近 N 天」算到今天
+  const contribWindow = (n) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.parse(today + "T00:00:00Z") - (n - 1) * 864e5).toISOString().slice(0, 10);
+    return { from, to: today };
+  };
+  // 「新开」只认创建日：用关闭/合并日筛，会把窗口前开、窗口内关闭的算成新开
+  const newInWindow = (from, to) => (x) => {
+    const at = String(x.createdAt || "").slice(0, 10);
+    return !from || (at >= from && at <= to);
+  };
   // fork 按创建时间算，不受流量数据滞后一天影响
   const forkWindow = (days) => {
     const to = new Date().toISOString().slice(0, 10);
@@ -518,6 +532,7 @@ export function makeEngine({ store: storeIn, save, cfg: cfgIn, repos, days = 7 }
   };
 
   function buildRepo(windowDays, t) {
+    const cw = contribWindow(windowDays);
     const s = repoStore(store, t.key);
     const fw = forkWindow(windowDays);
     const rows = series(s, windowDays, s.npm || {});
@@ -582,8 +597,10 @@ export function makeEngine({ store: storeIn, save, cfg: cfgIn, repos, days = 7 }
         return im && im.at >= rows[0]?.d ? im : null;
       })(),
       contributions: {
-        issues: (meta.activity?.issues || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
-        pulls: (meta.activity?.pulls || []).filter(inWindow(rows[0]?.d, rows.at(-1)?.d)),
+        from: cw.from,
+        to: cw.to,
+        issues: (meta.activity?.issues || []).filter(newInWindow(cw.from, cw.to)),
+        pulls: (meta.activity?.pulls || []).filter(newInWindow(cw.from, cw.to)),
         open: meta.openWork ? { issues: meta.openWork.issues || [], pulls: meta.openWork.pulls || [] } : null,
         alerts: meta.alerts || null,
         at: meta.contribAt || null,

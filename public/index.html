@@ -881,11 +881,11 @@ function render(days) {
         : `访客 ${fmt(uniq)} · 近 ${Math.min(covN, 14)} 天去重`;
   // 还没同步到任何一天时 dom 是空的，别在这里炸掉整屏
   rangeNote.textContent = dom.length ? dom[0].label + " → " + dom[dom.length - 1].label : "";
-  // issue/PR 数跟着所选窗口走，标题要说清是哪段
-  const cSpan = LIVE.starGrowth?.span;
-  document.getElementById("contrib-range").textContent = days === 1 && LIVE.range?.to
-    ? label(LIVE.range.to)
-    : cSpan ? `近 ${cSpan} 天` : `近 ${days} 天`;
+  // issue/PR 数跟着所选窗口走，标题要说清是哪段；贡献是活数据，窗口到今天，不是流量快照那天
+  const cFrom = LIVE.contributions?.from, cTo = LIVE.contributions?.to;
+  document.getElementById("contrib-range").textContent = !cTo ? `近 ${days} 天`
+    : days === 1 ? label(cTo)
+    : cFrom && cFrom !== cTo ? `${label(cFrom)} → ${label(cTo)}` : label(cTo);
   // 没有令牌就拿不到 traffic，匿名下这张图一定是空的；空图不如说清为什么空
   const noTraffic = !recs.length && !(LIVE.paths && LIVE.paths.length) && !(LIVE.referrers && LIVE.referrers.length);
   document.getElementById("flow-head").hidden = noTraffic;
@@ -1369,7 +1369,8 @@ function applyLive(json) {
   const ic = c.issues.length, pc = c.pulls.length;
   document.getElementById("k-contrib").textContent = ic + pc;
   // 1 天视图报的是最近一个完整日，不是今天
-  const dayLbl = json.range && json.range.to ? label(json.range.to) : "今天";
+  // 贡献窗口到今天，流量快照晚一天：这里要跟贡献卡同一段，不能拿快照那天顶替
+  const dayLbl = c.to ? label(c.to) : (json.range && json.range.to ? label(json.range.to) : "今天");
   // 子标要说清是哪几类反馈，别只给一个合计
   // 多天窗口里数据不够长时，写实际有数据的天数：90 天的选择只有 19 天数据，不能当成 90 天
   // 口径和摘要一致：min(图上选的天数, 实际覆盖天数)，today 没采集到不算一天
@@ -1423,10 +1424,11 @@ function applyLive(json) {
   };
   if (!pending.length) {
     // 没有还开着的，不等于「都回复过」：关掉的也可能是没人理的
-    issub.textContent = ic ? `窗口内 ${ic} 个都已关闭` : "没有外部 issue";
+    issub.textContent = ic ? `${ic} 个都已关闭` : "没有外部 issue";
   } else {
     const replied = pending.some((x) => (x.comments ?? 0) > 0);
-    issub.textContent = (ic ? "" : "没有新的；") + (pending.length === 1 ? (replied ? "还开着：" : "没回：") : `${replied ? "还开着" : "没回"} ${pending.length} 个：`);
+    // 主数是这段窗口的新开数，下面是当下还开着的：两件事分开写，不要拿「没有新的」去接一个真单子
+    issub.textContent = pending.length === 1 ? (replied ? "还开着：" : "没回：") : `${replied ? "还开着" : "没回"} ${pending.length} 个：`;
     addLinks(issub, pending);
   }
   document.getElementById("s-prs").textContent = pc + " 个";
@@ -1435,7 +1437,7 @@ function applyLive(json) {
   const openPrs = c.open ? c.open.pulls : c.pulls.filter((x) => !x.merged);
   prSub.textContent = "";
   if (openPrs.length) {
-    prSub.textContent = (prMerged ? `已合并 ${prMerged} 个 · ` : "") + (pc ? "" : "没有新的；")
+    prSub.textContent = (prMerged ? `已合并 ${prMerged} 个 · ` : "")
       + (openPrs.length === 1 ? "待合：" : `待合 ${openPrs.length} 个：`);
     addLinks(prSub, openPrs);
   } else if (!pc) {
