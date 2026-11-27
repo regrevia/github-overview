@@ -202,10 +202,22 @@
   .ai p { margin: 0 0 7px; font-size: 16px; line-height: 1.7; }
   .ai p:last-of-type { margin-bottom: 10px; }
   .ai b { font-weight: 500; }
-  .ask { display: flex; gap: 6px; }
-  .ask input, .cfg input { flex: 1; height: 28px; background: var(--bg-base); border: 1px solid var(--border-l1); border-radius: 8px;
+  /* 问答是一条输入框，不是表单：整条就是输入区，发送键落在条内 */
+  .ask { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 4px 0 12px;
+    background: var(--bg-base); border: 1px solid var(--border-l1); border-radius: 10px; }
+  .ask:focus-within { border-color: var(--border-l2); }
+  .ask input { flex: 1; min-width: 0; height: 100%; background: none; border: 0; padding: 0; outline: none;
+    color: var(--label-primary); font: inherit; font-size: 14px; }
+  .ask input::placeholder { color: var(--label-secondary); }
+  .ask button { flex: none; width: 28px; height: 26px; padding: 0; border: 0; border-radius: 8px;
+    background: var(--bg-layer-2); color: var(--label-secondary); font-size: 12px; }
+  .ask button:hover:not(:disabled) { background: var(--brand); color: #fff; }
+  .cfg input { flex: 1; height: 28px; background: var(--bg-base); border: 1px solid var(--border-l1); border-radius: 8px;
     color: var(--label-primary); font: inherit; padding: 0 9px; min-width: 0; }
-  .ask input::placeholder, .cfg input::placeholder { color: var(--label-secondary); }
+  .cfg input::placeholder { color: var(--label-secondary); }
+  /* 密钥框不是登录框：用 text-security 打码，Chrome 不会挂「管理密码…」浮层 */
+  .secret { -webkit-text-security: disc; }
+  .secret:focus { -webkit-text-security: none; }
   .cfg-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--label-secondary); margin-top: 8px; }
   .cfg-row label { width: 56px; flex: none; }
   .cfg { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-l1); }
@@ -466,15 +478,17 @@
         <p id="sum-3" hidden></p>
 
         <div class="ask">
-          <input id="ask-q" placeholder="问全部仓库">
-          <button class="mini">问</button>
+          <input id="ask-q" type="text" placeholder="问全部仓库" aria-label="提问"
+                 autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                 name="" data-1p-ignore data-lpignore="true">
+          <button type="button" aria-label="发送">问</button>
         </div>
         <p class="ask-out" id="ask-out" hidden></p>
         <div class="foot"><span id="ai-model">—</span><span id="sum-src"></span><button class="link" id="cfg-toggle">配置</button></div>
 
         <div class="cfg" id="cfg">
           <div class="cfg-row"><label>Base URL</label><input id="cfg-base" placeholder="https://…/v1" spellcheck="false"></div>
-          <div class="cfg-row"><label>API Key</label><input id="cfg-key" type="password" placeholder="sk-…" spellcheck="false"></div>
+          <div class="cfg-row"><label>API Key</label><input id="cfg-key" type="text" class="secret" placeholder="sk-…" spellcheck="false" autocomplete="off" data-1p-ignore data-lpignore="true"></div>
           <div class="cfg-row"><label>模型</label><input id="cfg-model" placeholder="模型名" spellcheck="false"></div>
           <div class="cfg-row" style="justify-content:flex-end;gap:6px">
             <button class="mini ghost">取消</button>
@@ -500,7 +514,8 @@
     <div id="gate-main"></div>
     <div class="gate-alt">
       <p id="gate-alt-lead" style="margin:0 0 8px"></p>
-      <input id="gate-token" type="password" placeholder="ghp_… 或 github_pat_…" spellcheck="false" autocomplete="off">
+      <input id="gate-token" type="text" class="secret" placeholder="ghp_… 或 github_pat_…" spellcheck="false" autocomplete="off"
+             data-1p-ignore data-lpignore="true">
       <p style="margin:8px 0 0;display:flex;align-items:center;gap:14px">
         <button class="ghost" id="gate-token-go" hidden>用令牌登录</button>
         <a id="gate-new" target="_blank" rel="noopener">在新标签页生成</a>
