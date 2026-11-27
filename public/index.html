@@ -20,7 +20,7 @@
     --bg-layer-1: #16191f;
     --bg-layer-2: #1d2128;
     --border-l1: #262b34;
-    --border-l2: #3a4250;
+    --border-l2: #6b7789;
     --label-primary: #e6e8ec;
     --label-secondary: #98a1b0;
     --brand: #4f8cff;
@@ -1407,7 +1407,8 @@ function applyLive(json) {
     ? (relCapped ? "最近 " + rels.length + " 个 · " + relSpan : relSpan)
     : "本窗口无发版";
   const pending = c.open ? c.open.issues : c.issues.filter((x) => x.state === "open");
-  document.getElementById("s-issues").textContent = ic + " 个";
+  // 主数取还开着的：数字要和下面列的单子一一对上，窗口新开数放进子标
+  document.getElementById("s-issues").textContent = (c.open ? pending.length : ic) + " 个";
   const issub = document.getElementById("s-issues-sub");
   issub.textContent = "";
   // 一个都别藏：没有 hover 的触屏上 tooltip 等于不存在，每条都做成链接
@@ -1424,26 +1425,27 @@ function applyLive(json) {
   };
   if (!pending.length) {
     // 没有还开着的，不等于「都回复过」：关掉的也可能是没人理的
-    issub.textContent = ic ? `${ic} 个都已关闭` : "没有外部 issue";
+    issub.textContent = ic ? `本段新开 ${ic} 个，都已关闭` : "没有外部 issue";
   } else {
-    const replied = pending.some((x) => (x.comments ?? 0) > 0);
-    // 主数是这段窗口的新开数，下面是当下还开着的：两件事分开写，不要拿「没有新的」去接一个真单子
-    issub.textContent = pending.length === 1 ? (replied ? "还开着：" : "没回：") : `${replied ? "还开着" : "没回"} ${pending.length} 个：`;
+    // 子标只说两件事：这段开了几个、现在还剩哪几个
+    issub.textContent = (ic !== pending.length ? `本段新开 ${ic} 个 · ` : "") + "还开着：";
     addLinks(issub, pending);
   }
-  document.getElementById("s-prs").textContent = pc + " 个";
+  document.getElementById("s-prs").textContent = (c.open ? (c.open.pulls || []).length : pc) + " 个";
   const prSub = document.getElementById("s-prs-sub");
   const prMerged = c.pulls.filter((x) => x.merged).length;
   const openPrs = c.open ? c.open.pulls : c.pulls.filter((x) => !x.merged);
   prSub.textContent = "";
   if (openPrs.length) {
-    prSub.textContent = (prMerged ? `已合并 ${prMerged} 个 · ` : "")
-      + (openPrs.length === 1 ? "待合：" : `待合 ${openPrs.length} 个：`);
+    prSub.textContent = (pc !== openPrs.length ? `本段新开 ${pc} 个 · ` : "")
+      + (prMerged ? `已合并 ${prMerged} 个 · ` : "") + "待合：";
     addLinks(prSub, openPrs);
   } else if (!pc) {
     prSub.textContent = "没有外部 PR";
+  } else if (prMerged) {
+    prSub.textContent = `本段新开 ${pc} 个，已合并 ${prMerged} 个`;
   } else {
-    prSub.textContent = `${pc} 个都已处理`;
+    prSub.textContent = `本段新开 ${pc} 个，都已关闭`;
   }
   const fresh = document.getElementById("contrib-fresh");
   if (fresh) {
